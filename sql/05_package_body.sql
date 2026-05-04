@@ -581,14 +581,132 @@
     END;
 
     PROCEDURE show_result(p_id_attempt NUMBER) IS
+        v_test_name test.test_name%TYPE;
+        v_attempt_number attempt.attempt_number%TYPE;
+        v_status attempt.status%TYPE;
+        v_score attempt.score%TYPE;
+        v_percent attempt.percent_result%TYPE;
+        v_avg_percent NUMBER;
     BEGIN
-        NULL;
+        SELECT t.test_name, a.attempt_number, a.status, a.score, a.percent_result
+        INTO v_test_name, v_attempt_number, v_status, v_score, v_percent
+        FROM attempt a
+        JOIN test t ON t.id_test = a.id_test
+        WHERE a.id_attempt = p_id_attempt;
+
+        SELECT NVL(AVG(x.percent_result), 0)
+        INTO v_avg_percent
+        FROM attempt x
+        WHERE x.id_test = (SELECT id_test FROM attempt WHERE id_attempt = p_id_attempt)
+          AND x.status IN ('FINISHED', 'TIME_EXPIRED')
+          AND x.percent_result IS NOT NULL;
+
+        DBMS_OUTPUT.PUT_LINE('Тест: ' || v_test_name);
+        DBMS_OUTPUT.PUT_LINE('Номер попытки: ' || v_attempt_number);
+        DBMS_OUTPUT.PUT_LINE('Статус: ' || v_status);
+        DBMS_OUTPUT.PUT_LINE('Балл: ' || NVL(v_score, 0));
+        DBMS_OUTPUT.PUT_LINE('Процент: ' || NVL(v_percent, 0));
+        DBMS_OUTPUT.PUT_LINE('Средний процент по тесту: ' || ROUND(v_avg_percent, 2));
+        DBMS_OUTPUT.PUT_LINE('Разница: ' || ROUND(NVL(v_percent, 0) - v_avg_percent, 2));
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20400, 'Попытка не найдена');
     END;
 
     PROCEDURE show_user_attempts(p_uid NUMBER) IS
+        v_found NUMBER := 0;
     BEGIN
-        NULL;
+        FOR rec IN (
+            SELECT a.id_attempt, t.test_name, a.attempt_number, a.status, a.score, a.percent_result
+            FROM attempt a
+            JOIN test t ON t.id_test = a.id_test
+            WHERE a.uid = p_uid
+            ORDER BY a.id_attempt DESC
+        ) LOOP
+            v_found := 1;
+            DBMS_OUTPUT.PUT_LINE(
+                'Попытка #' || rec.id_attempt ||
+                ' | Тест: ' || rec.test_name ||
+                ' | Номер: ' || rec.attempt_number ||
+                ' | Статус: ' || rec.status ||
+                ' | Балл: ' || NVL(rec.score, 0) ||
+                ' | Процент: ' || NVL(rec.percent_result, 0)
+            );
+        END LOOP;
+
+        IF v_found = 0 THEN
+            DBMS_OUTPUT.PUT_LINE('У пользователя нет попыток.');
+        END IF;
     END;
-    PROCEDURE show_test_statistics(p_id_test NUMBER) IS BEGIN NULL; END;
+    PROCEDURE show_test_statistics(p_id_test NUMBER) IS
+        v_test_name test.test_name%TYPE;
+        v_total_attempts NUMBER;
+        v_finished_attempts NUMBER;
+        v_avg_score NUMBER;
+        v_avg_percent NUMBER;
+        v_min_percent NUMBER;
+        v_max_percent NUMBER;
+    BEGIN
+        SELECT test_name INTO v_test_name FROM test WHERE id_test = p_id_test;
+
+        SELECT
+            COUNT(*),
+            SUM(CASE WHEN status IN ('FINISHED', 'TIME_EXPIRED') THEN 1 ELSE 0 END),
+            ROUND(AVG(score), 2),
+            ROUND(AVG(percent_result), 2),
+            MIN(percent_result),
+            MAX(percent_result)
+        INTO
+            v_total_attempts,
+            v_finished_attempts,
+            v_avg_score,
+            v_avg_percent,
+            v_min_percent,
+            v_max_percent
+        FROM attempt
+        WHERE id_test = p_id_test;
+
+        DBMS_OUTPUT.PUT_LINE('Статистика теста: ' || v_test_name || ' (#' || p_id_test || ')');
+        DBMS_OUTPUT.PUT_LINE('Попыток: ' || NVL(v_total_attempts, 0));
+        DBMS_OUTPUT.PUT_LINE('Завершено: ' || NVL(v_finished_attempts, 0));
+        DBMS_OUTPUT.PUT_LINE('Средний балл: ' || NVL(v_avg_score, 0));
+        DBMS_OUTPUT.PUT_LINE('Средний процент: ' || NVL(v_avg_percent, 0));
+        DBMS_OUTPUT.PUT_LINE('Минимальный процент: ' || NVL(v_min_percent, 0));
+        DBMS_OUTPUT.PUT_LINE('Максимальный процент: ' || NVL(v_max_percent, 0));
+
+        FOR q IN (
+            SELECT
+                qt.order_num,
+                q.question_text,
+                COUNT(a.id_answer) AS total_answers,
+                SUM(CASE WHEN a.is_correct = 1 THEN 1 ELSE 0 END) AS correct_answers,
+                ROUND(
+                    CASE WHEN COUNT(a.id_answer) = 0 THEN 0
+                         ELSE SUM(CASE WHEN a.is_correct = 1 THEN 1 ELSE 0 END) / COUNT(a.id_answer) * 100
+                    END, 2
+                ) AS percent_correct,
+                ROUND(AVG(a.answer_time), 2) AS avg_answer_time,
+                ROUND(AVG(a.earned_score), 2) AS avg_earned_score
+            FROM question_in_test qt
+            JOIN question q ON q.id_question = qt.id_question
+            LEFT JOIN answer a ON a.id_qt = qt.id_qt
+            WHERE qt.id_test = p_id_test
+            GROUP BY qt.order_num, q.question_text
+            ORDER BY qt.order_num
+        ) LOOP
+            DBMS_OUTPUT.PUT_LINE(
+                'Q' || q.order_num ||
+                ' | ' || q.question_text ||
+                ' | Ответов: ' || NVL(q.total_answers, 0) ||
+                ' | Правильных: ' || NVL(q.correct_answers, 0) ||
+                ' | %: ' || NVL(q.percent_correct, 0) ||
+                ' | Ср. время: ' || NVL(q.avg_answer_time, 0) ||
+                ' | Ср. балл: ' || NVL(q.avg_earned_score, 0)
+            );
+        END LOOP;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20401, 'Тест не найден');
+    END;
 END quiz_platform;
 /
