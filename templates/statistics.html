@@ -1,7 +1,25 @@
 ﻿{% extends 'base.html' %}
-{% block title %}Статистика - Qwiz{% endblock %}
+{% block title %}Статистика теста - Qwiz{% endblock %}
 {% block content %}
-<h2>Статистика</h2>
-<p>Страница в разработке.</p>
-{% endblock %}
+<h2>Статистика теста #{{ id_test }}: {{ test_name }}</h2>
+<p>Попыток: {{ summary[0] or 0 }}</p>
+<p>Завершено: {{ summary[1] or 0 }}</p>
+<p>Средний балл: {{ summary[2] if summary[2] is not none else 0 }}</p>
+<p>Средний процент: {{ summary[3] if summary[3] is not none else 0 }}%</p>
+<p>Минимум: {{ summary[4] if summary[4] is not none else 0 }}%</p>
+<p>Максимум: {{ summary[5] if summary[5] is not none else 0 }}%</p>
 
+<h3>По вопросам</h3>
+<ul>
+  {% for q in per_question %}
+    <li>
+      {{ q[0] }}. {{ q[1] }}
+      | Ответов: {{ q[2] or 0 }}
+      | Правильных: {{ q[3] or 0 }}
+      | % правильных: {{ q[4] or 0 }}
+      | Ср. время: {{ q[5] if q[5] is not none else 0 }} сек
+      | Ср. балл: {{ q[6] if q[6] is not none else 0 }}
+    </li>
+  {% endfor %}
+</ul>
+{% endblock %}

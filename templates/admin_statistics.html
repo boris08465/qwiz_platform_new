@@ -1,0 +1,11 @@
+﻿{% extends 'base.html' %}
+{% block title %}Админ: Сводка - Qwiz{% endblock %}
+{% block content %}
+<h2>Админ: Общая статистика</h2>
+<p>Пользователей всего: {{ overview.users_total }}</p>
+<p>Пользователей активных: {{ overview.users_active }}</p>
+<p>Тестов всего: {{ overview.tests_total }}</p>
+<p>Тестов опубликовано: {{ overview.tests_published }}</p>
+<p>Вопросов всего: {{ overview.questions_total }}</p>
+<p>Попыток всего: {{ overview.attempts_total }}</p>
+{% endblock %}

@@ -1,0 +1,10 @@
+﻿{% extends 'base.html' %}
+{% block title %}Админ: Тесты - Qwiz{% endblock %}
+{% block content %}
+<h2>Админ: Тесты</h2>
+<ul>
+  {% for t in tests %}
+    <li>#{{ t[0] }} | {{ t[1] }} | Автор: {{ t[2] }} | {{ 'Опубликован' if t[3] == 1 else 'Скрыт' }} | {{ t[4] }}</li>
+  {% endfor %}
+</ul>
+{% endblock %}

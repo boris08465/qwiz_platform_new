@@ -52,6 +52,16 @@ def require_author_role():
     return None
 
 
+def require_admin_role():
+    auth = require_auth()
+    if auth:
+        return auth
+    if session.get('role_id') != 3:
+        flash('Доступ только для администратора.', 'error')
+        return redirect(url_for('dashboard_page'))
+    return None
+
+
 def fetch_list(sql, params=None):
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -911,7 +921,127 @@ def test_access_deactivate_page(id_test, uid):
 
 @app.get('/author/tests/<int:id_test>/statistics')
 def statistics_page(id_test):
-    return render_template('statistics.html', id_test=id_test)
+    access = require_author_role()
+    if access:
+        return access
+    owner = fetch_list('SELECT id_test, test_name FROM test WHERE id_test = :id_test AND uid_author = :uid', {'id_test': id_test, 'uid': session['uid']})
+    if not owner:
+        flash('Тест не найден.', 'error')
+        return redirect(url_for('author_tests_page'))
+
+    summary = fetch_list(
+        '''
+        SELECT
+            COUNT(*) AS total_attempts,
+            SUM(CASE WHEN status IN ('FINISHED', 'TIME_EXPIRED') THEN 1 ELSE 0 END) AS finished_attempts,
+            ROUND(AVG(score), 2) AS avg_score,
+            ROUND(AVG(percent_result), 2) AS avg_percent,
+            MIN(percent_result) AS min_percent,
+            MAX(percent_result) AS max_percent
+        FROM attempt
+        WHERE id_test = :id_test
+        ''',
+        {'id_test': id_test},
+    )[0]
+
+    per_question = fetch_list(
+        '''
+        SELECT
+            qt.order_num,
+            q.question_text,
+            COUNT(a.id_answer) AS total_answers,
+            SUM(CASE WHEN a.is_correct = 1 THEN 1 ELSE 0 END) AS correct_answers,
+            ROUND(
+                CASE WHEN COUNT(a.id_answer) = 0 THEN 0
+                     ELSE SUM(CASE WHEN a.is_correct = 1 THEN 1 ELSE 0 END) / COUNT(a.id_answer) * 100
+                END, 2
+            ) AS percent_correct,
+            ROUND(AVG(a.answer_time), 2) AS avg_answer_time,
+            ROUND(AVG(a.earned_score), 2) AS avg_earned_score
+        FROM question_in_test qt
+        JOIN question q ON q.id_question = qt.id_question
+        LEFT JOIN answer a ON a.id_qt = qt.id_qt
+        WHERE qt.id_test = :id_test
+        GROUP BY qt.order_num, q.question_text
+        ORDER BY qt.order_num
+        ''',
+        {'id_test': id_test},
+    )
+    return render_template('statistics.html', id_test=id_test, test_name=owner[0][1], summary=summary, per_question=per_question)
+
+
+@app.get('/admin/users')
+def admin_users_page():
+    access = require_admin_role()
+    if access:
+        return access
+    users = fetch_list(
+        '''
+        SELECT u.uid, u.user_name, r.role_name, u.is_active, u.created_at
+        FROM users u
+        JOIN role r ON r.id_role = u.id_role
+        ORDER BY u.uid DESC
+        '''
+    )
+    return render_template('admin_users.html', users=users)
+
+
+@app.get('/admin/tests')
+def admin_tests_page():
+    access = require_admin_role()
+    if access:
+        return access
+    tests = fetch_list(
+        '''
+        SELECT t.id_test, t.test_name, u.user_name, t.is_active, t.created_at, t.attempt_limit, t.question_count
+        FROM test t
+        JOIN users u ON u.uid = t.uid_author
+        ORDER BY t.id_test DESC
+        '''
+    )
+    return render_template('admin_tests.html', tests=tests)
+
+
+@app.get('/admin/questions')
+def admin_questions_page():
+    access = require_admin_role()
+    if access:
+        return access
+    questions = fetch_list(
+        '''
+        SELECT q.id_question, q.question_text, u.user_name, qt.type_name, q.is_active, q.created_at
+        FROM question q
+        JOIN users u ON u.uid = q.uid_author
+        JOIN question_type qt ON qt.type_id = q.type_id
+        ORDER BY q.id_question DESC
+        '''
+    )
+    return render_template('admin_questions.html', questions=questions)
+
+
+@app.get('/admin/categories')
+def admin_categories_page():
+    access = require_admin_role()
+    if access:
+        return access
+    categories = fetch_list('SELECT id_category, category_name, category_description FROM category ORDER BY category_name')
+    return render_template('admin_categories.html', categories=categories)
+
+
+@app.get('/admin/statistics')
+def admin_statistics_page():
+    access = require_admin_role()
+    if access:
+        return access
+    overview = {
+        'users_total': fetch_list('SELECT COUNT(*) FROM users')[0][0],
+        'users_active': fetch_list('SELECT COUNT(*) FROM users WHERE is_active = 1')[0][0],
+        'tests_total': fetch_list('SELECT COUNT(*) FROM test')[0][0],
+        'tests_published': fetch_list('SELECT COUNT(*) FROM test WHERE is_active = 1')[0][0],
+        'questions_total': fetch_list('SELECT COUNT(*) FROM question')[0][0],
+        'attempts_total': fetch_list('SELECT COUNT(*) FROM attempt')[0][0],
+    }
+    return render_template('admin_statistics.html', overview=overview)
 
 
 if __name__ == '__main__':
