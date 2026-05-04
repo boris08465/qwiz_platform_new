@@ -1,0 +1,15 @@
+﻿{% extends 'base.html' %}
+{% block title %}Личный кабинет - Qwiz{% endblock %}
+{% block content %}
+<h2>Личный кабинет</h2>
+<p><strong>UID:</strong> {{ uid }}</p>
+<p><strong>Имя:</strong> {{ user_name }}</p>
+<p><strong>Роль:</strong> {{ role_title }}</p>
+
+<h3>Быстрые ссылки</h3>
+<ul>
+  <li><a href="/tests">Доступные тесты</a></li>
+  <li><a href="/my-attempts">Мои попытки</a></li>
+  <li><a href="/profile">Профиль</a></li>
+</ul>
+{% endblock %}

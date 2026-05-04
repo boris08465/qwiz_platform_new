@@ -1,0 +1,19 @@
+﻿{% extends 'base.html' %}
+{% block title %}Категории - Qwiz{% endblock %}
+{% block content %}
+<h2>Категории</h2>
+<form method="post">
+  <label>Название категории</label>
+  <input type="text" name="category_name" required>
+  <label>Описание</label>
+  <input type="text" name="category_description">
+  <button type="submit">Создать категорию</button>
+</form>
+
+<h3>Список категорий</h3>
+<ul>
+  {% for c in categories %}
+    <li>#{{ c[0] }} - {{ c[1] }}{% if c[2] %} ({{ c[2] }}){% endif %}</li>
+  {% endfor %}
+</ul>
+{% endblock %}

@@ -1,0 +1,30 @@
+﻿{% extends 'base.html' %}
+{% block title %}Тест автора - Qwiz{% endblock %}
+{% block content %}
+<h2>Тест #{{ test[0] }}: {{ test[1] }}</h2>
+<p><strong>Статус:</strong> {{ 'Опубликован' if test[3] == 1 else 'Скрыт' }}</p>
+<p><strong>Описание:</strong> {{ test[2] or '-' }}</p>
+<p><strong>Категория:</strong> {{ test[8] or '-' }}</p>
+<p><strong>Сложность:</strong> {{ test[9] or '-' }}</p>
+<p><strong>Лимит времени:</strong> {{ test[6] or '-' }}</p>
+<p><strong>Лимит попыток:</strong> {{ test[5] }}</p>
+<p><strong>План вопросов:</strong> {{ test[4] or '-' }}</p>
+<p><strong>Обратная связь:</strong> {{ 'Включена' if test[7] == 1 else 'Отключена' }}</p>
+
+<p>
+  <a href="/author/tests/{{ test[0] }}/questions">Ручное наполнение вопросами</a>
+</p>
+<form method="post" action="/author/tests/{{ test[0] }}/generate">
+  <button type="submit">Автоматически сформировать тест</button>
+</form>
+<form method="post" action="/author/tests/{{ test[0] }}/publish">
+  <button type="submit">Опубликовать / скрыть тест</button>
+</form>
+
+<h3>Вопросы в тесте</h3>
+<ul>
+  {% for q in questions %}
+    <li>Порядок {{ q[1] }} | Вопрос #{{ q[5] }} | Вес {{ q[2] }} | {{ q[6] }}</li>
+  {% endfor %}
+</ul>
+{% endblock %}

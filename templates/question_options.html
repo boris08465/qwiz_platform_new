@@ -1,0 +1,26 @@
+﻿{% extends 'base.html' %}
+{% block title %}Варианты ответа - Qwiz{% endblock %}
+{% block content %}
+<h2>Варианты ответа для вопроса #{{ question[0] }}</h2>
+<p>{{ question[1] }}</p>
+
+<form method="post">
+  <label>Текст варианта</label>
+  <input type="text" name="option_text" required>
+
+  <label>Правильный?</label>
+  <select name="is_correct">
+    <option value="0">Нет</option>
+    <option value="1">Да</option>
+  </select>
+
+  <button type="submit">Добавить вариант</button>
+</form>
+
+<h3>Список вариантов</h3>
+<ul>
+  {% for o in options %}
+    <li>#{{ o[0] }} - {{ o[1] }} | {{ 'Правильный' if o[2] == 1 else 'Неправильный' }}</li>
+  {% endfor %}
+</ul>
+{% endblock %}

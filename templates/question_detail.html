@@ -1,0 +1,19 @@
+﻿{% extends 'base.html' %}
+{% block title %}Вопрос - Qwiz{% endblock %}
+{% block content %}
+<h2>Вопрос #{{ q[0] }}</h2>
+<p><strong>Текст:</strong> {{ q[1] }}</p>
+<p><strong>Тип:</strong> {{ q[7] }}</p>
+<p><strong>Категория:</strong> {{ q[8] }}</p>
+<p><strong>Сложность:</strong> {{ q[9] }}</p>
+<p><strong>Статус:</strong> {{ 'Активен' if q[6] == 1 else 'Отключен' }}</p>
+<p><strong>Правильный текст:</strong> {{ q[3] or '-' }}</p>
+<p><strong>Правильное число:</strong> {{ q[4] if q[4] is not none else '-' }}</p>
+<p><strong>Допуск:</strong> {{ q[5] if q[5] is not none else '-' }}</p>
+<p><strong>Пояснение:</strong> {{ q[2] or '-' }}</p>
+
+<p><a href="/author/questions/{{ q[0] }}/options">Варианты ответа</a></p>
+<form method="post" action="/author/questions/{{ q[0] }}/deactivate">
+  <button type="submit">Деактивировать вопрос</button>
+</form>
+{% endblock %}

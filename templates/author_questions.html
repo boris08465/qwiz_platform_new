@@ -1,0 +1,15 @@
+﻿{% extends 'base.html' %}
+{% block title %}Банк вопросов - Qwiz{% endblock %}
+{% block content %}
+<h2>Банк вопросов</h2>
+<p><a href="/author/questions/create">Создать вопрос</a></p>
+<ul>
+  {% for q in questions %}
+    <li>
+      <a href="/author/questions/{{ q[0] }}">#{{ q[0] }}</a> - {{ q[1] }}
+      | Тип: {{ q[2] }} | Категория: {{ q[3] }} | Сложность: {{ q[4] }}
+      | Статус: {{ 'Активен' if q[5] == 1 else 'Отключен' }}
+    </li>
+  {% endfor %}
+</ul>
+{% endblock %}

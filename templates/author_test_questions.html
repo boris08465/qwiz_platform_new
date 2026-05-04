@@ -1,0 +1,35 @@
+﻿{% extends 'base.html' %}
+{% block title %}Вопросы теста - Qwiz{% endblock %}
+{% block content %}
+<h2>Ручное наполнение теста #{{ id_test }}</h2>
+<form method="post">
+  <label>Вопрос</label>
+  <select name="id_question" required>
+    {% for q in pool %}<option value="{{ q[0] }}">#{{ q[0] }} {{ q[1] }}</option>{% endfor %}
+  </select>
+
+  <label>Вес</label>
+  <input type="number" name="weight" step="0.01" min="0.01" value="1">
+
+  <label>Порядок</label>
+  <input type="number" name="order_num" min="1" required>
+
+  <label>Обязательный</label>
+  <select name="is_required">
+    <option value="1">Да</option>
+    <option value="0">Нет</option>
+  </select>
+
+  <label>Лимит времени на вопрос, сек</label>
+  <input type="number" name="time_limit" min="1">
+
+  <button type="submit">Добавить в тест</button>
+</form>
+
+<h3>Уже добавлено</h3>
+<ul>
+  {% for s in selected %}
+    <li>Порядок {{ s[0] }} | #{{ s[1] }} {{ s[2] }} | Вес {{ s[3] }}</li>
+  {% endfor %}
+</ul>
+{% endblock %}

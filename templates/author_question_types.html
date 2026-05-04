@@ -1,0 +1,17 @@
+﻿{% extends 'base.html' %}
+{% block title %}Типы вопросов - Qwiz{% endblock %}
+{% block content %}
+<h2>Типы вопросов</h2>
+<form method="post">
+  <label>Название типа</label>
+  <input type="text" name="type_name" required>
+  <button type="submit">Создать тип</button>
+</form>
+
+<h3>Список типов</h3>
+<ul>
+  {% for t in types %}
+    <li>#{{ t[0] }} - {{ t[1] }}</li>
+  {% endfor %}
+</ul>
+{% endblock %}

@@ -1,0 +1,38 @@
+﻿{% extends 'base.html' %}
+{% block title %}Создание вопроса - Qwiz{% endblock %}
+{% block content %}
+<h2>Создание вопроса</h2>
+<form method="post" action="/author/questions/create">
+  <label>Текст вопроса</label>
+  <input type="text" name="question_text" required>
+
+  <label>Категория</label>
+  <select name="id_category" required>
+    {% for c in categories %}<option value="{{ c[0] }}">{{ c[1] }}</option>{% endfor %}
+  </select>
+
+  <label>Сложность</label>
+  <select name="id_level" required>
+    {% for l in levels %}<option value="{{ l[0] }}">{{ l[1] }}</option>{% endfor %}
+  </select>
+
+  <label>Тип вопроса</label>
+  <select name="type_id" required>
+    {% for t in types %}<option value="{{ t[0] }}">{{ t[1] }}</option>{% endfor %}
+  </select>
+
+  <label>Правильный текст (для текстовых/коротких)</label>
+  <input type="text" name="correct_text">
+
+  <label>Правильное число (для числовых)</label>
+  <input type="number" step="any" name="correct_number">
+
+  <label>Допуск (для числовых)</label>
+  <input type="number" step="any" name="tolerance">
+
+  <label>Пояснение</label>
+  <input type="text" name="explanation">
+
+  <button type="submit">Создать вопрос</button>
+</form>
+{% endblock %}

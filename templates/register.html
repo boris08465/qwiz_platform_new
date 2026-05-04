@@ -1,0 +1,17 @@
+﻿{% extends 'base.html' %}
+{% block title %}Регистрация - Qwiz{% endblock %}
+{% block content %}
+<h2>Регистрация</h2>
+<form method="post">
+  <label for="user_name">Имя пользователя</label>
+  <input id="user_name" name="user_name" type="text" required>
+
+  <label for="password">Пароль</label>
+  <input id="password" name="password" type="password" required>
+
+  <label for="password_repeat">Повтор пароля</label>
+  <input id="password_repeat" name="password_repeat" type="password" required>
+
+  <button type="submit">Зарегистрироваться</button>
+</form>
+{% endblock %}

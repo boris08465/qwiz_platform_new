@@ -1,0 +1,17 @@
+﻿{% extends 'base.html' %}
+{% block title %}Тесты автора - Qwiz{% endblock %}
+{% block content %}
+<h2>Тесты автора</h2>
+<p><a href="/author/tests/create">Создать тест</a></p>
+<ul>
+  {% for t in tests %}
+    <li>
+      <a href="/author/tests/{{ t[0] }}">#{{ t[0] }} {{ t[1] }}</a>
+      | Статус: {{ 'Опубликован' if t[3] == 1 else 'Скрыт' }}
+      | Категория: {{ t[8] or '-' }}
+      | Сложность: {{ t[9] or '-' }}
+      | Вопросов по плану: {{ t[4] or '-' }}
+    </li>
+  {% endfor %}
+</ul>
+{% endblock %}

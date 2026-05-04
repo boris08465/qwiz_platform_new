@@ -1,0 +1,17 @@
+﻿{% extends 'base.html' %}
+{% block title %}Уровни сложности - Qwiz{% endblock %}
+{% block content %}
+<h2>Уровни сложности</h2>
+<form method="post">
+  <label>Название уровня</label>
+  <input type="text" name="level_name" required>
+  <button type="submit">Создать уровень</button>
+</form>
+
+<h3>Список уровней</h3>
+<ul>
+  {% for l in levels %}
+    <li>#{{ l[0] }} - {{ l[1] }}</li>
+  {% endfor %}
+</ul>
+{% endblock %}

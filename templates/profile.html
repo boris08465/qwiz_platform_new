@@ -1,0 +1,10 @@
+﻿{% extends 'base.html' %}
+{% block title %}Профиль - Qwiz{% endblock %}
+{% block content %}
+<h2>Профиль пользователя</h2>
+<p><strong>UID:</strong> {{ uid }}</p>
+<p><strong>Имя:</strong> {{ user_name }}</p>
+<p><strong>Роль (для интерфейса):</strong> {{ role_title }}</p>
+<p><strong>Роль (код):</strong> {{ role_name_code }}</p>
+<p><strong>Статус:</strong> {{ 'Активен' if is_active == 1 else 'Отключен' }}</p>
+{% endblock %}

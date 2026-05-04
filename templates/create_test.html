@@ -1,0 +1,41 @@
+﻿{% extends 'base.html' %}
+{% block title %}Создание теста - Qwiz{% endblock %}
+{% block content %}
+<h2>Создание теста</h2>
+<form method="post">
+  <label>Название теста</label>
+  <input type="text" name="test_name" required>
+
+  <label>Описание</label>
+  <input type="text" name="test_description">
+
+  <label>Категория</label>
+  <select name="id_category">
+    <option value="">Без категории</option>
+    {% for c in categories %}<option value="{{ c[0] }}">{{ c[1] }}</option>{% endfor %}
+  </select>
+
+  <label>Сложность</label>
+  <select name="id_level">
+    <option value="">Не указана</option>
+    {% for l in levels %}<option value="{{ l[0] }}">{{ l[1] }}</option>{% endfor %}
+  </select>
+
+  <label>Лимит времени, сек</label>
+  <input type="number" name="time_limit" min="1">
+
+  <label>Лимит попыток</label>
+  <input type="number" name="attempt_limit" min="1" value="1" required>
+
+  <label>Плановое количество вопросов (для автогенерации)</label>
+  <input type="number" name="question_count" min="1">
+
+  <label>Показывать обратную связь</label>
+  <select name="show_feedback" required>
+    <option value="1">Да</option>
+    <option value="0">Нет</option>
+  </select>
+
+  <button type="submit">Создать тест</button>
+</form>
+{% endblock %}
