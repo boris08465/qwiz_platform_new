@@ -380,17 +380,78 @@ def author_question_options_create(id_question):
 
 @app.get('/tests')
 def tests_page():
-    return render_template('tests.html')
+    auth = require_auth()
+    if auth:
+        return auth
+    tests = fetch_list(
+        '''
+        SELECT t.id_test, t.test_name, t.test_description, c.category_name, d.level_name,
+               t.time_limit, t.attempt_limit, t.question_count, t.show_feedback,
+               NVL((
+                   SELECT MAX(a.attempt_number)
+                   FROM attempt a
+                   WHERE a.uid = :uid AND a.id_test = t.id_test
+               ), 0) AS used_attempts
+        FROM test_access ta
+        JOIN test t ON t.id_test = ta.id_test
+        LEFT JOIN category c ON c.id_category = t.id_category
+        LEFT JOIN difficulty_level d ON d.id_level = t.id_level
+        WHERE ta.uid = :uid
+          AND ta.is_active = 1
+          AND t.is_active = 1
+        ORDER BY t.id_test DESC
+        ''',
+        {'uid': session['uid']},
+    )
+    return render_template('tests.html', tests=tests)
 
 
 @app.get('/tests/<int:id_test>')
 def test_detail_page(id_test):
-    return render_template('test_detail.html', id_test=id_test)
+    auth = require_auth()
+    if auth:
+        return auth
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            has_access = int(cur.callfunc('quiz_platform.check_access', int, [id_test, session['uid']]))
+    if has_access != 1:
+        flash('Нет доступа к тесту.', 'error')
+        return redirect(url_for('tests_page'))
+
+    test = fetch_list(
+        '''
+        SELECT t.id_test, t.test_name, t.test_description, c.category_name, d.level_name,
+               t.time_limit, t.attempt_limit, t.question_count, t.show_feedback,
+               NVL((
+                   SELECT MAX(a.attempt_number)
+                   FROM attempt a
+                   WHERE a.uid = :uid AND a.id_test = t.id_test
+               ), 0) AS used_attempts
+        FROM test t
+        LEFT JOIN category c ON c.id_category = t.id_category
+        LEFT JOIN difficulty_level d ON d.id_level = t.id_level
+        WHERE t.id_test = :id_test AND t.is_active = 1
+        ''',
+        {'id_test': id_test, 'uid': session['uid']},
+    )
+    if not test:
+        flash('Тест не найден.', 'error')
+        return redirect(url_for('tests_page'))
+    return render_template('test_detail.html', test=test[0])
 
 
 @app.get('/attempts/<int:id_attempt>')
 def attempt_page(id_attempt):
     return render_template('attempt.html', id_attempt=id_attempt)
+
+
+@app.get('/tests/<int:id_test>/start')
+def start_test_page(id_test):
+    auth = require_auth()
+    if auth:
+        return auth
+    flash('Запуск попытки будет реализован на этапе 6.', 'error')
+    return redirect(url_for('test_detail_page', id_test=id_test))
 
 
 @app.get('/attempts/<int:id_attempt>/result')
@@ -586,7 +647,72 @@ def author_test_publish_page(id_test):
 
 @app.get('/author/tests/<int:id_test>/access')
 def test_access_page(id_test):
-    return render_template('test_access.html', id_test=id_test)
+    access = require_author_role()
+    if access:
+        return access
+    owner_test = fetch_list('SELECT id_test, test_name FROM test WHERE id_test = :id_test AND uid_author = :uid', {'id_test': id_test, 'uid': session['uid']})
+    if not owner_test:
+        flash('Тест не найден.', 'error')
+        return redirect(url_for('author_tests_page'))
+    granted = fetch_list(
+        '''
+        SELECT ta.uid, u.user_name, ta.is_active, ta.granted_at
+        FROM test_access ta
+        JOIN users u ON u.uid = ta.uid
+        WHERE ta.id_test = :id_test
+        ORDER BY ta.granted_at DESC
+        ''',
+        {'id_test': id_test},
+    )
+    return render_template('test_access.html', id_test=id_test, test_name=owner_test[0][1], granted=granted)
+
+
+@app.post('/author/tests/<int:id_test>/access')
+def test_access_grant_page(id_test):
+    access = require_author_role()
+    if access:
+        return access
+    uid_raw = request.form.get('uid', '').strip()
+    if not uid_raw.isdigit():
+        flash('UID должен быть числом.', 'error')
+        return redirect(url_for('test_access_page', id_test=id_test))
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.callproc('quiz_platform.grant_test_access', [id_test, int(uid_raw)])
+            conn.commit()
+        flash('Доступ выдан.', 'success')
+    except oracledb.DatabaseError as exc:
+        flash(f'Ошибка выдачи доступа: {exc.args[0].message}', 'error')
+    return redirect(url_for('test_access_page', id_test=id_test))
+
+
+@app.post('/author/tests/<int:id_test>/access/<int:uid>/deactivate')
+def test_access_deactivate_page(id_test, uid):
+    access = require_author_role()
+    if access:
+        return access
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    '''
+                    UPDATE test_access ta
+                    SET ta.is_active = 0
+                    WHERE ta.id_test = :id_test
+                      AND ta.uid = :uid
+                      AND EXISTS (
+                        SELECT 1 FROM test t
+                        WHERE t.id_test = ta.id_test AND t.uid_author = :author_uid
+                      )
+                    ''',
+                    {'id_test': id_test, 'uid': uid, 'author_uid': session['uid']},
+                )
+            conn.commit()
+        flash('Доступ деактивирован.', 'success')
+    except oracledb.DatabaseError as exc:
+        flash(f'Ошибка деактивации доступа: {exc.args[0].message}', 'error')
+    return redirect(url_for('test_access_page', id_test=id_test))
 
 
 @app.get('/author/tests/<int:id_test>/statistics')

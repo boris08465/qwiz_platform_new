@@ -225,8 +225,49 @@
         VALUES (p_id_question, TRIM(p_option_text), p_is_correct);
     END;
 
-    PROCEDURE grant_test_access(p_id_test NUMBER, p_uid NUMBER) IS BEGIN NULL; END;
-    FUNCTION check_access(p_id_test NUMBER, p_uid NUMBER) RETURN NUMBER IS BEGIN RETURN 0; END;
+    PROCEDURE grant_test_access(p_id_test NUMBER, p_uid NUMBER) IS
+        v_user_cnt NUMBER;
+        v_test_cnt NUMBER;
+    BEGIN
+        SELECT COUNT(*) INTO v_user_cnt FROM users WHERE uid = p_uid AND is_active = 1;
+        IF v_user_cnt = 0 THEN
+            RAISE_APPLICATION_ERROR(-20200, 'Пользователь не найден или неактивен');
+        END IF;
+
+        SELECT COUNT(*) INTO v_test_cnt FROM test WHERE id_test = p_id_test;
+        IF v_test_cnt = 0 THEN
+            RAISE_APPLICATION_ERROR(-20201, 'Тест не найден');
+        END IF;
+
+        MERGE INTO test_access ta
+        USING (SELECT p_uid uid, p_id_test id_test FROM dual) src
+        ON (ta.uid = src.uid AND ta.id_test = src.id_test)
+        WHEN MATCHED THEN
+            UPDATE SET ta.is_active = 1, ta.granted_at = SYSDATE
+        WHEN NOT MATCHED THEN
+            INSERT (uid, id_test, granted_at, is_active)
+            VALUES (src.uid, src.id_test, SYSDATE, 1);
+    END;
+
+    FUNCTION check_access(p_id_test NUMBER, p_uid NUMBER) RETURN NUMBER IS
+        v_cnt NUMBER;
+    BEGIN
+        SELECT COUNT(*)
+        INTO v_cnt
+        FROM test_access ta
+        JOIN test t ON t.id_test = ta.id_test
+        JOIN users u ON u.uid = ta.uid
+        WHERE ta.id_test = p_id_test
+          AND ta.uid = p_uid
+          AND ta.is_active = 1
+          AND t.is_active = 1
+          AND u.is_active = 1;
+
+        IF v_cnt > 0 THEN
+            RETURN 1;
+        END IF;
+        RETURN 0;
+    END;
     PROCEDURE start_attempt(p_id_test NUMBER, p_uid NUMBER) IS BEGIN NULL; END;
     PROCEDURE save_answer(p_id_attempt NUMBER, p_id_qt NUMBER, p_answer_text VARCHAR2, p_answer_number NUMBER, p_answer_time NUMBER) IS BEGIN NULL; END;
     PROCEDURE save_selected_option(p_id_answer NUMBER, p_id_option NUMBER) IS BEGIN NULL; END;
