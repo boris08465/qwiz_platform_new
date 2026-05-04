@@ -2,6 +2,16 @@
 {% block title %}Мои попытки - Qwiz{% endblock %}
 {% block content %}
 <h2>Мои попытки</h2>
-<p>Страница в разработке.</p>
+<ul>
+  {% for a in attempts %}
+    <li>
+      <a href="/attempts/{{ a[0] }}/result">Попытка #{{ a[0] }}</a>
+      | Тест: {{ a[1] }}
+      | Номер: {{ a[2] }}
+      | Статус: {{ a[3] }}
+      | Балл: {{ a[4] if a[4] is not none else '-' }}
+      | Процент: {{ a[5] if a[5] is not none else '-' }}
+    </li>
+  {% endfor %}
+</ul>
 {% endblock %}
-

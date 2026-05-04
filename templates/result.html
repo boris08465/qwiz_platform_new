@@ -1,7 +1,30 @@
 ﻿{% extends 'base.html' %}
-{% block title %}Результат - Qwiz{% endblock %}
+{% block title %}Результат попытки - Qwiz{% endblock %}
 {% block content %}
-<h2>Результат</h2>
-<p>Страница в разработке.</p>
-{% endblock %}
+<h2>Результат попытки #{{ result[0] }}</h2>
+<p><strong>Тест:</strong> {{ result[8] }}</p>
+<p><strong>Номер попытки:</strong> {{ result[1] }}</p>
+<p><strong>Старт:</strong> {{ result[2] }}</p>
+<p><strong>Завершение:</strong> {{ result[3] }}</p>
+<p><strong>Статус:</strong> {{ result[4] }}</p>
+<p><strong>Балл:</strong> {{ result[5] if result[5] is not none else 0 }}</p>
+<p><strong>Процент:</strong> {{ result[6] if result[6] is not none else 0 }}%</p>
+<p><strong>Средний по тесту:</strong> {{ '%.2f'|format(result[10]) }}%</p>
+<p><strong>Разница:</strong> {{ '%.2f'|format((result[6] or 0) - result[10]) }}%</p>
 
+{% if result[9] == 1 %}
+  <h3>Обратная связь</h3>
+  <ul>
+    {% for a in answers %}
+      <li>
+        {{ a[0] }}. {{ a[1] }}
+        | Ваш ответ: {{ a[2] if a[2] else (a[3] if a[3] is not none else '-') }}
+        | Балл: {{ a[5] if a[5] is not none else 0 }}
+        | Правильно: {{ 'Да' if a[4] == 1 else 'Нет' }}
+        | Эталон: {{ a[6] if a[6] else (a[7] if a[7] is not none else '-') }}
+        {% if a[8] %}| Пояснение: {{ a[8] }}{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+{% endif %}
+{% endblock %}

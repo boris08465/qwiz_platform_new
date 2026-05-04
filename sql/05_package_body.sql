@@ -268,15 +268,327 @@
         END IF;
         RETURN 0;
     END;
-    PROCEDURE start_attempt(p_id_test NUMBER, p_uid NUMBER) IS BEGIN NULL; END;
-    PROCEDURE save_answer(p_id_attempt NUMBER, p_id_qt NUMBER, p_answer_text VARCHAR2, p_answer_number NUMBER, p_answer_time NUMBER) IS BEGIN NULL; END;
-    PROCEDURE save_selected_option(p_id_answer NUMBER, p_id_option NUMBER) IS BEGIN NULL; END;
-    FUNCTION check_answer(p_id_answer NUMBER) RETURN NUMBER IS BEGIN RETURN 0; END;
-    FUNCTION calc_answer_score(p_id_answer NUMBER) RETURN NUMBER IS BEGIN RETURN 0; END;
-    PROCEDURE finish_attempt(p_id_attempt NUMBER) IS BEGIN NULL; END;
-    PROCEDURE calc_result(p_id_attempt NUMBER) IS BEGIN NULL; END;
-    PROCEDURE show_result(p_id_attempt NUMBER) IS BEGIN NULL; END;
-    PROCEDURE show_user_attempts(p_uid NUMBER) IS BEGIN NULL; END;
+    PROCEDURE start_attempt(p_id_test NUMBER, p_uid NUMBER) IS
+        v_user_active NUMBER;
+        v_test_active NUMBER;
+        v_access NUMBER;
+        v_attempt_limit NUMBER;
+        v_attempts_used NUMBER;
+        v_attempt_no NUMBER;
+    BEGIN
+        SELECT is_active INTO v_user_active FROM users WHERE uid = p_uid;
+        IF v_user_active <> 1 THEN
+            RAISE_APPLICATION_ERROR(-20300, 'Пользователь неактивен');
+        END IF;
+
+        SELECT is_active, attempt_limit
+        INTO v_test_active, v_attempt_limit
+        FROM test
+        WHERE id_test = p_id_test;
+        IF v_test_active <> 1 THEN
+            RAISE_APPLICATION_ERROR(-20301, 'Тест скрыт');
+        END IF;
+
+        v_access := check_access(p_id_test, p_uid);
+        IF v_access <> 1 THEN
+            RAISE_APPLICATION_ERROR(-20302, 'Нет доступа к тесту');
+        END IF;
+
+        SELECT NVL(MAX(attempt_number), 0)
+        INTO v_attempts_used
+        FROM attempt
+        WHERE uid = p_uid AND id_test = p_id_test;
+        IF v_attempts_used >= v_attempt_limit THEN
+            RAISE_APPLICATION_ERROR(-20303, 'Превышен лимит попыток');
+        END IF;
+
+        v_attempt_no := v_attempts_used + 1;
+        INSERT INTO attempt (uid, id_test, attempt_number, start_date, status, finished_in_time)
+        VALUES (p_uid, p_id_test, v_attempt_no, SYSDATE, 'STARTED', 1);
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20304, 'Пользователь или тест не найден');
+    END;
+
+    PROCEDURE save_answer(
+        p_id_attempt NUMBER,
+        p_id_qt NUMBER,
+        p_answer_text VARCHAR2,
+        p_answer_number NUMBER,
+        p_answer_time NUMBER
+    ) IS
+        v_status attempt.status%TYPE;
+        v_uid attempt.uid%TYPE;
+        v_test_id attempt.id_test%TYPE;
+        v_started DATE;
+        v_test_time_limit NUMBER;
+    BEGIN
+        SELECT a.status, a.uid, a.id_test, a.start_date, t.time_limit
+        INTO v_status, v_uid, v_test_id, v_started, v_test_time_limit
+        FROM attempt a
+        JOIN test t ON t.id_test = a.id_test
+        WHERE a.id_attempt = p_id_attempt;
+
+        IF v_status <> 'STARTED' THEN
+            RAISE_APPLICATION_ERROR(-20305, 'Попытка завершена');
+        END IF;
+
+        IF v_test_time_limit IS NOT NULL
+           AND (SYSDATE - v_started) * 86400 > v_test_time_limit THEN
+            UPDATE attempt
+            SET status = 'TIME_EXPIRED', end_date = SYSDATE, finished_in_time = 0
+            WHERE id_attempt = p_id_attempt;
+            RAISE_APPLICATION_ERROR(-20306, 'Время теста истекло');
+        END IF;
+
+        INSERT INTO answer (
+            id_attempt, id_qt, answer_text, answer_number,
+            answer_date, answer_time, is_checked
+        ) VALUES (
+            p_id_attempt, p_id_qt, p_answer_text, p_answer_number,
+            SYSDATE, p_answer_time, 0
+        );
+    EXCEPTION
+        WHEN DUP_VAL_ON_INDEX THEN
+            RAISE_APPLICATION_ERROR(-20307, 'Ответ уже сохранен');
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20308, 'Попытка не найдена');
+    END;
+
+    PROCEDURE save_selected_option(p_id_answer NUMBER, p_id_option NUMBER) IS
+        v_id_question NUMBER;
+        v_opt_question NUMBER;
+    BEGIN
+        SELECT qt.id_question
+        INTO v_id_question
+        FROM answer a
+        JOIN question_in_test qt ON qt.id_qt = a.id_qt
+        WHERE a.id_answer = p_id_answer;
+
+        SELECT id_question INTO v_opt_question
+        FROM answer_option
+        WHERE id_option = p_id_option;
+
+        IF v_id_question <> v_opt_question THEN
+            RAISE_APPLICATION_ERROR(-20309, 'Вариант не относится к вопросу ответа');
+        END IF;
+
+        INSERT INTO answer_selected_option (id_answer, id_option)
+        VALUES (p_id_answer, p_id_option);
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20310, 'Ответ или вариант не найден');
+        WHEN DUP_VAL_ON_INDEX THEN
+            NULL;
+    END;
+
+    FUNCTION check_answer(p_id_answer NUMBER) RETURN NUMBER IS
+        v_type_id NUMBER;
+        v_correct_text VARCHAR2(500);
+        v_correct_number NUMBER;
+        v_tolerance NUMBER;
+        v_answer_text VARCHAR2(500);
+        v_answer_number NUMBER;
+        v_cnt NUMBER;
+        v_correct NUMBER := 0;
+        v_selected_wrong NUMBER := 0;
+        v_selected_correct NUMBER := 0;
+        v_total_correct NUMBER := 0;
+    BEGIN
+        SELECT q.type_id, q.correct_text, q.correct_number, NVL(q.tolerance, 0), a.answer_text, a.answer_number
+        INTO v_type_id, v_correct_text, v_correct_number, v_tolerance, v_answer_text, v_answer_number
+        FROM answer a
+        JOIN question_in_test qt ON qt.id_qt = a.id_qt
+        JOIN question q ON q.id_question = qt.id_question
+        WHERE a.id_answer = p_id_answer;
+
+        IF v_type_id IN (1, 5) THEN
+            SELECT COUNT(*)
+            INTO v_cnt
+            FROM answer_selected_option aso
+            JOIN answer_option ao ON ao.id_option = aso.id_option
+            WHERE aso.id_answer = p_id_answer
+              AND ao.is_correct = 1;
+            IF v_cnt = 1 THEN
+                SELECT COUNT(*)
+                INTO v_cnt
+                FROM answer_selected_option
+                WHERE id_answer = p_id_answer;
+                IF v_cnt = 1 THEN
+                    v_correct := 1;
+                END IF;
+            END IF;
+        ELSIF v_type_id = 2 THEN
+            SELECT COUNT(*) INTO v_selected_wrong
+            FROM answer_selected_option aso
+            JOIN answer_option ao ON ao.id_option = aso.id_option
+            WHERE aso.id_answer = p_id_answer
+              AND ao.is_correct = 0;
+            IF v_selected_wrong = 0 THEN
+                SELECT COUNT(*) INTO v_selected_correct
+                FROM answer_selected_option aso
+                JOIN answer_option ao ON ao.id_option = aso.id_option
+                WHERE aso.id_answer = p_id_answer
+                  AND ao.is_correct = 1;
+                SELECT COUNT(*) INTO v_total_correct
+                FROM answer_option ao
+                JOIN answer a ON a.id_answer = p_id_answer
+                JOIN question_in_test qt ON qt.id_qt = a.id_qt
+                WHERE ao.id_question = qt.id_question
+                  AND ao.is_correct = 1;
+                IF v_total_correct > 0 AND v_selected_correct = v_total_correct THEN
+                    v_correct := 1;
+                END IF;
+            END IF;
+        ELSIF v_type_id IN (3, 6) THEN
+            IF LOWER(TRIM(NVL(v_answer_text, ''))) = LOWER(TRIM(NVL(v_correct_text, '#NULL#'))) THEN
+                v_correct := 1;
+            END IF;
+        ELSIF v_type_id = 4 THEN
+            IF v_answer_number IS NOT NULL
+               AND v_correct_number IS NOT NULL
+               AND ABS(v_answer_number - v_correct_number) <= v_tolerance THEN
+                v_correct := 1;
+            END IF;
+        END IF;
+
+        UPDATE answer SET is_correct = v_correct, is_checked = 1 WHERE id_answer = p_id_answer;
+        RETURN v_correct;
+    END;
+
+    FUNCTION calc_answer_score(p_id_answer NUMBER) RETURN NUMBER IS
+        v_type_id NUMBER;
+        v_weight NUMBER;
+        v_q_time_limit NUMBER;
+        v_ans_time NUMBER;
+        v_score NUMBER := 0;
+        v_correct NUMBER;
+        v_selected_wrong NUMBER := 0;
+        v_selected_correct NUMBER := 0;
+        v_total_correct NUMBER := 0;
+    BEGIN
+        SELECT q.type_id, qt.weight, qt.time_limit, NVL(a.answer_time, 0)
+        INTO v_type_id, v_weight, v_q_time_limit, v_ans_time
+        FROM answer a
+        JOIN question_in_test qt ON qt.id_qt = a.id_qt
+        JOIN question q ON q.id_question = qt.id_question
+        WHERE a.id_answer = p_id_answer;
+
+        IF v_q_time_limit IS NOT NULL AND v_ans_time > v_q_time_limit THEN
+            v_score := 0;
+            UPDATE answer SET earned_score = v_score WHERE id_answer = p_id_answer;
+            RETURN v_score;
+        END IF;
+
+        v_correct := check_answer(p_id_answer);
+
+        IF v_type_id = 2 THEN
+            SELECT COUNT(*) INTO v_selected_wrong
+            FROM answer_selected_option aso
+            JOIN answer_option ao ON ao.id_option = aso.id_option
+            WHERE aso.id_answer = p_id_answer AND ao.is_correct = 0;
+
+            IF v_selected_wrong = 0 THEN
+                SELECT COUNT(*) INTO v_selected_correct
+                FROM answer_selected_option aso
+                JOIN answer_option ao ON ao.id_option = aso.id_option
+                WHERE aso.id_answer = p_id_answer AND ao.is_correct = 1;
+                SELECT COUNT(*) INTO v_total_correct
+                FROM answer_option ao
+                JOIN answer a ON a.id_answer = p_id_answer
+                JOIN question_in_test qt ON qt.id_qt = a.id_qt
+                WHERE ao.id_question = qt.id_question
+                  AND ao.is_correct = 1;
+                IF v_total_correct > 0 THEN
+                    v_score := v_weight * v_selected_correct / v_total_correct;
+                END IF;
+            END IF;
+        ELSE
+            IF v_correct = 1 THEN
+                v_score := v_weight;
+            ELSE
+                v_score := 0;
+            END IF;
+        END IF;
+
+        UPDATE answer SET earned_score = v_score WHERE id_answer = p_id_answer;
+        RETURN v_score;
+    END;
+
+    PROCEDURE calc_result(p_id_attempt NUMBER) IS
+        v_total_weight NUMBER := 0;
+        v_total_score NUMBER := 0;
+        v_percent NUMBER := 0;
+    BEGIN
+        FOR r IN (
+            SELECT a.id_answer
+            FROM answer a
+            WHERE a.id_attempt = p_id_attempt
+        ) LOOP
+            v_total_score := v_total_score + NVL(calc_answer_score(r.id_answer), 0);
+        END LOOP;
+
+        SELECT NVL(SUM(qt.weight), 0)
+        INTO v_total_weight
+        FROM question_in_test qt
+        JOIN attempt at ON at.id_test = qt.id_test
+        WHERE at.id_attempt = p_id_attempt;
+
+        IF v_total_weight > 0 THEN
+            v_percent := ROUND(v_total_score / v_total_weight * 100, 2);
+        END IF;
+
+        UPDATE attempt
+        SET score = v_total_score,
+            percent_result = v_percent
+        WHERE id_attempt = p_id_attempt;
+    END;
+
+    PROCEDURE finish_attempt(p_id_attempt NUMBER) IS
+        v_status attempt.status%TYPE;
+        v_started DATE;
+        v_time_limit NUMBER;
+        v_new_status VARCHAR2(30);
+        v_finished_in_time NUMBER := 1;
+    BEGIN
+        SELECT a.status, a.start_date, t.time_limit
+        INTO v_status, v_started, v_time_limit
+        FROM attempt a
+        JOIN test t ON t.id_test = a.id_test
+        WHERE a.id_attempt = p_id_attempt;
+
+        IF v_status <> 'STARTED' THEN
+            RAISE_APPLICATION_ERROR(-20311, 'Попытка уже завершена');
+        END IF;
+
+        v_new_status := 'FINISHED';
+        IF v_time_limit IS NOT NULL
+           AND (SYSDATE - v_started) * 86400 > v_time_limit THEN
+            v_new_status := 'TIME_EXPIRED';
+            v_finished_in_time := 0;
+        END IF;
+
+        UPDATE attempt
+        SET end_date = SYSDATE,
+            status = v_new_status,
+            finished_in_time = v_finished_in_time
+        WHERE id_attempt = p_id_attempt;
+
+        calc_result(p_id_attempt);
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20308, 'Попытка не найдена');
+    END;
+
+    PROCEDURE show_result(p_id_attempt NUMBER) IS
+    BEGIN
+        NULL;
+    END;
+
+    PROCEDURE show_user_attempts(p_uid NUMBER) IS
+    BEGIN
+        NULL;
+    END;
     PROCEDURE show_test_statistics(p_id_test NUMBER) IS BEGIN NULL; END;
 END quiz_platform;
 /

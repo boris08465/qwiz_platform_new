@@ -442,7 +442,92 @@ def test_detail_page(id_test):
 
 @app.get('/attempts/<int:id_attempt>')
 def attempt_page(id_attempt):
-    return render_template('attempt.html', id_attempt=id_attempt)
+    auth = require_auth()
+    if auth:
+        return auth
+    attempt_rows = fetch_list(
+        '''
+        SELECT a.id_attempt, a.status, a.start_date, a.end_date, t.id_test, t.test_name
+        FROM attempt a
+        JOIN test t ON t.id_test = a.id_test
+        WHERE a.id_attempt = :id_attempt AND a.uid = :uid
+        ''',
+        {'id_attempt': id_attempt, 'uid': session['uid']},
+    )
+    if not attempt_rows:
+        flash('Попытка не найдена.', 'error')
+        return redirect(url_for('my_attempts_page'))
+
+    questions = fetch_list(
+        '''
+        SELECT qt.id_qt, qt.order_num, qt.weight, qt.time_limit,
+               q.id_question, q.question_text, q.type_id, q.explanation
+        FROM question_in_test qt
+        JOIN question q ON q.id_question = qt.id_question
+        JOIN attempt a ON a.id_test = qt.id_test
+        WHERE a.id_attempt = :id_attempt
+        ORDER BY qt.order_num
+        ''',
+        {'id_attempt': id_attempt},
+    )
+
+    answer_map = {}
+    for ans in fetch_list(
+        '''
+        SELECT id_answer, id_qt, answer_text, answer_number, is_correct, earned_score, answer_time
+        FROM answer
+        WHERE id_attempt = :id_attempt
+        ''',
+        {'id_attempt': id_attempt},
+    ):
+        answer_map[ans[1]] = {
+            'id_answer': ans[0],
+            'answer_text': ans[2],
+            'answer_number': ans[3],
+            'is_correct': ans[4],
+            'earned_score': ans[5],
+            'answer_time': ans[6],
+            'selected_options': [],
+        }
+
+    selected_rows = fetch_list(
+        '''
+        SELECT aso.id_answer, aso.id_option
+        FROM answer_selected_option aso
+        JOIN answer a ON a.id_answer = aso.id_answer
+        WHERE a.id_attempt = :id_attempt
+        ''',
+        {'id_attempt': id_attempt},
+    )
+    by_answer_id = {}
+    for r in selected_rows:
+        by_answer_id.setdefault(r[0], []).append(r[1])
+
+    option_map = {}
+    for row in fetch_list(
+        '''
+        SELECT ao.id_option, ao.id_question, ao.option_text
+        FROM answer_option ao
+        JOIN question q ON q.id_question = ao.id_question
+        JOIN question_in_test qt ON qt.id_question = q.id_question
+        JOIN attempt a ON a.id_test = qt.id_test
+        WHERE a.id_attempt = :id_attempt
+        ORDER BY ao.id_option
+        ''',
+        {'id_attempt': id_attempt},
+    ):
+        option_map.setdefault(row[1], []).append({'id_option': row[0], 'option_text': row[2]})
+
+    for info in answer_map.values():
+        info['selected_options'] = by_answer_id.get(info['id_answer'], [])
+
+    return render_template(
+        'attempt.html',
+        attempt=attempt_rows[0],
+        questions=questions,
+        option_map=option_map,
+        answer_map=answer_map,
+    )
 
 
 @app.get('/tests/<int:id_test>/start')
@@ -450,18 +535,127 @@ def start_test_page(id_test):
     auth = require_auth()
     if auth:
         return auth
-    flash('Запуск попытки будет реализован на этапе 6.', 'error')
-    return redirect(url_for('test_detail_page', id_test=id_test))
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.callproc('quiz_platform.start_attempt', [id_test, session['uid']])
+                cur.execute('SELECT seq_attempt.CURRVAL FROM dual')
+                new_attempt_id = cur.fetchone()[0]
+            conn.commit()
+        return redirect(url_for('attempt_page', id_attempt=new_attempt_id))
+    except oracledb.DatabaseError as exc:
+        flash(f'Ошибка запуска попытки: {exc.args[0].message}', 'error')
+        return redirect(url_for('test_detail_page', id_test=id_test))
+
+
+@app.post('/attempts/<int:id_attempt>/answer')
+def save_attempt_answer_page(id_attempt):
+    auth = require_auth()
+    if auth:
+        return auth
+    id_qt_raw = request.form.get('id_qt', '').strip()
+    if not id_qt_raw.isdigit():
+        flash('Неверный вопрос попытки.', 'error')
+        return redirect(url_for('attempt_page', id_attempt=id_attempt))
+    id_qt = int(id_qt_raw)
+    answer_time = int(request.form.get('answer_time', '0') or 0)
+    answer_text = request.form.get('answer_text') or None
+    answer_number_raw = request.form.get('answer_number', '').strip()
+    answer_number = float(answer_number_raw) if answer_number_raw else None
+    selected_option_ids = [int(x) for x in request.form.getlist('selected_option_ids') if str(x).isdigit()]
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.callproc('quiz_platform.save_answer', [id_attempt, id_qt, answer_text, answer_number, answer_time])
+                cur.execute('SELECT seq_answer.CURRVAL FROM dual')
+                new_answer_id = cur.fetchone()[0]
+                for opt_id in selected_option_ids:
+                    cur.callproc('quiz_platform.save_selected_option', [new_answer_id, opt_id])
+            conn.commit()
+        flash('Ответ сохранен.', 'success')
+    except oracledb.DatabaseError as exc:
+        flash(f'Ошибка сохранения ответа: {exc.args[0].message}', 'error')
+    return redirect(url_for('attempt_page', id_attempt=id_attempt))
+
+
+@app.route('/attempts/<int:id_attempt>/finish', methods=['POST', 'GET'])
+def finish_attempt_page(id_attempt):
+    auth = require_auth()
+    if auth:
+        return auth
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.callproc('quiz_platform.finish_attempt', [id_attempt])
+            conn.commit()
+        return redirect(url_for('result_page', id_attempt=id_attempt))
+    except oracledb.DatabaseError as exc:
+        flash(f'Ошибка завершения попытки: {exc.args[0].message}', 'error')
+        return redirect(url_for('attempt_page', id_attempt=id_attempt))
 
 
 @app.get('/attempts/<int:id_attempt>/result')
 def result_page(id_attempt):
-    return render_template('result.html', id_attempt=id_attempt)
+    auth = require_auth()
+    if auth:
+        return auth
+    rows = fetch_list(
+        '''
+        SELECT a.id_attempt, a.attempt_number, a.start_date, a.end_date, a.status, a.score, a.percent_result,
+               t.id_test, t.test_name, t.show_feedback,
+               NVL((
+                   SELECT AVG(x.percent_result)
+                   FROM attempt x
+                   WHERE x.id_test = a.id_test
+                     AND x.status IN ('FINISHED', 'TIME_EXPIRED')
+                     AND x.percent_result IS NOT NULL
+               ), 0) AS avg_percent
+        FROM attempt a
+        JOIN test t ON t.id_test = a.id_test
+        WHERE a.id_attempt = :id_attempt AND a.uid = :uid
+        ''',
+        {'id_attempt': id_attempt, 'uid': session['uid']},
+    )
+    if not rows:
+        flash('Результат не найден.', 'error')
+        return redirect(url_for('my_attempts_page'))
+    result = rows[0]
+
+    answers = []
+    if result[9] == 1:
+        answers = fetch_list(
+            '''
+            SELECT qt.order_num, q.question_text, a.answer_text, a.answer_number, a.is_correct, a.earned_score,
+                   q.correct_text, q.correct_number, q.explanation
+            FROM answer a
+            JOIN question_in_test qt ON qt.id_qt = a.id_qt
+            JOIN question q ON q.id_question = qt.id_question
+            WHERE a.id_attempt = :id_attempt
+            ORDER BY qt.order_num
+            ''',
+            {'id_attempt': id_attempt},
+        )
+
+    return render_template('result.html', result=result, answers=answers)
 
 
 @app.get('/my-attempts')
 def my_attempts_page():
-    return render_template('my_attempts.html')
+    auth = require_auth()
+    if auth:
+        return auth
+    attempts = fetch_list(
+        '''
+        SELECT a.id_attempt, t.test_name, a.attempt_number, a.status, a.score, a.percent_result, a.start_date, a.end_date
+        FROM attempt a
+        JOIN test t ON t.id_test = a.id_test
+        WHERE a.uid = :uid
+        ORDER BY a.id_attempt DESC
+        ''',
+        {'uid': session['uid']},
+    )
+    return render_template('my_attempts.html', attempts=attempts)
 
 
 @app.get('/author/tests')

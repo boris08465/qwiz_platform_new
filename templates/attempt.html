@@ -1,7 +1,55 @@
 ﻿{% extends 'base.html' %}
-{% block title %}Прохождение - Qwiz{% endblock %}
+{% block title %}Прохождение теста - Qwiz{% endblock %}
 {% block content %}
-<h2>Прохождение</h2>
-<p>Страница в разработке.</p>
-{% endblock %}
+<h2>Прохождение: {{ attempt[5] }}</h2>
+<p><strong>Попытка:</strong> #{{ attempt[0] }} | <strong>Статус:</strong> {{ attempt[1] }}</p>
 
+{% if attempt[1] == 'STARTED' %}
+  <form method="post" action="/attempts/{{ attempt[0] }}/finish">
+    <button type="submit">Завершить попытку</button>
+  </form>
+{% else %}
+  <p><a href="/attempts/{{ attempt[0] }}/result">Смотреть результат</a></p>
+{% endif %}
+
+<h3>Вопросы</h3>
+{% for q in questions %}
+  <div style="padding:10px; border:1px solid #ddd; margin-bottom:10px;">
+    <p><strong>{{ q[1] }}.</strong> {{ q[5] }}</p>
+    <p>Вес: {{ q[2] }}{% if q[3] %} | Лимит на вопрос: {{ q[3] }} сек{% endif %}</p>
+
+    {% set a = answer_map.get(q[0]) %}
+    {% if a %}
+      <p><strong>Ответ сохранен.</strong> Балл: {{ a.earned_score if a.earned_score is not none else '-' }}</p>
+    {% elif attempt[1] == 'STARTED' %}
+      <form method="post" action="/attempts/{{ attempt[0] }}/answer">
+        <input type="hidden" name="id_qt" value="{{ q[0] }}">
+
+        {% if q[6] in [1,2,5] %}
+          {% for opt in option_map.get(q[4], []) %}
+            <label style="display:block;">
+              <input type="{% if q[6] in [1,5] %}radio{% else %}checkbox{% endif %}" name="selected_option_ids" value="{{ opt.id_option }}">
+              {{ opt.option_text }}
+            </label>
+          {% endfor %}
+        {% endif %}
+
+        {% if q[6] in [3,6] %}
+          <label>Текстовый ответ</label>
+          <input type="text" name="answer_text">
+        {% endif %}
+
+        {% if q[6] == 4 %}
+          <label>Числовой ответ</label>
+          <input type="number" step="any" name="answer_number">
+        {% endif %}
+
+        <label>Время ответа (сек)</label>
+        <input type="number" name="answer_time" min="0" value="0">
+
+        <button type="submit">Сохранить ответ</button>
+      </form>
+    {% endif %}
+  </div>
+{% endfor %}
+{% endblock %}
