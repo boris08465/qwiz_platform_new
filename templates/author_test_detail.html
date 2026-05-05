@@ -1,4 +1,4 @@
-﻿{% extends 'base.html' %}
+{% extends 'base.html' %}
 {% block title %}Тест автора - Qwiz{% endblock %}
 {% block content %}
 <h2>Тест #{{ test[0] }}: {{ test[1] }}</h2>
@@ -16,6 +16,9 @@
 </p>
 <p>
   <a href="/author/tests/{{ test[0] }}/statistics">Статистика теста</a>
+</p>
+<p>
+  <a href="/author/tests/{{ test[0] }}/access">Доступ к тесту</a>
 </p>
 <form method="post" action="/author/tests/{{ test[0] }}/generate">
   <button type="submit">Автоматически сформировать тест</button>

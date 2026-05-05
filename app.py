@@ -1,4 +1,4 @@
-﻿import os
+import os
 
 import oracledb
 from flask import Flask, flash, redirect, render_template, request, session, url_for
@@ -11,23 +11,23 @@ app.secret_key = os.getenv('SECRET_KEY', 'change-me')
 ROLE_MAP = {1: 'Пользователь', 2: 'Автор', 3: 'Администратор'}
 
 
-def get_user_by_uid(uid):
+def get_user_by_uid(user_id):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 '''
-                SELECT u.uid, u.user_name, u.id_role, r.role_name, u.is_active
+                SELECT u.user_id, u.user_name, u.id_role, r.role_name, u.is_active
                 FROM users u
                 JOIN role r ON r.id_role = u.id_role
-                WHERE u.uid = :uid
+                WHERE u.user_id = :user_id
                 ''',
-                {'uid': uid},
+                {'user_id': user_id},
             )
             row = cur.fetchone()
     if not row:
         return None
     return {
-        'uid': row[0],
+        'user_id': row[0],
         'user_name': row[1],
         'id_role': row[2],
         'role_name_code': row[3],
@@ -36,7 +36,7 @@ def get_user_by_uid(uid):
 
 
 def require_auth():
-    if 'uid' not in session:
+    if 'user_id' not in session:
         flash('Сначала выполните вход.', 'error')
         return redirect(url_for('login_page'))
     return None
@@ -96,7 +96,7 @@ def register_page():
                     cur.execute('SELECT seq_users.CURRVAL FROM dual')
                     new_uid = cur.fetchone()[0]
                 conn.commit()
-            flash(f'Регистрация успешно завершена. Ваш UID: {new_uid}. Используйте этот UID для входа в систему.', 'success')
+            flash(f'Регистрация успешно завершена. Ваш user_id: {new_uid}. Используйте этот user_id для входа в систему.', 'success')
             return redirect(url_for('login_page'))
         except oracledb.DatabaseError as exc:
             flash(f'Ошибка регистрации: {exc.args[0].message}', 'error')
@@ -106,21 +106,21 @@ def register_page():
 @app.route('/login', methods=['GET', 'POST'])
 def login_page():
     if request.method == 'POST':
-        uid_raw = request.form.get('uid', '').strip()
+        uid_raw = request.form.get('user_id', '').strip()
         password = request.form.get('password', '')
         if not uid_raw.isdigit():
-            flash('UID должен быть числом.', 'error')
+            flash('user_id должен быть числом.', 'error')
             return render_template('login.html')
         try:
-            uid = int(uid_raw)
+            user_id = int(uid_raw)
             with get_connection() as conn:
                 with conn.cursor() as cur:
-                    role_id = int(cur.callfunc('quiz_platform.login_user', int, [uid, password]))
-            user = get_user_by_uid(uid)
+                    role_id = int(cur.callfunc('quiz_platform.login_user', int, [user_id, password]))
+            user = get_user_by_uid(user_id)
             if not user:
                 flash('Пользователь не найден.', 'error')
                 return render_template('login.html')
-            session['uid'] = user['uid']
+            session['user_id'] = user['user_id']
             session['user_name'] = user['user_name']
             session['role_id'] = role_id
             session['role_title'] = ROLE_MAP.get(role_id, 'Пользователь')
@@ -142,7 +142,7 @@ def dashboard_page():
     auth = require_auth()
     if auth:
         return auth
-    return render_template('dashboard.html', uid=session['uid'], user_name=session['user_name'], role_title=session['role_title'])
+    return render_template('dashboard.html', user_id=session['user_id'], user_name=session['user_name'], role_title=session['role_title'])
 
 
 @app.get('/profile')
@@ -150,8 +150,8 @@ def profile_page():
     auth = require_auth()
     if auth:
         return auth
-    user = get_user_by_uid(session['uid'])
-    return render_template('profile.html', uid=user['uid'], user_name=user['user_name'], role_title=ROLE_MAP.get(user['id_role'], 'Пользователь'), role_name_code=user['role_name_code'], is_active=user['is_active'])
+    user = get_user_by_uid(session['user_id'])
+    return render_template('profile.html', user_id=user['user_id'], user_name=user['user_name'], role_title=ROLE_MAP.get(user['id_role'], 'Пользователь'), role_name_code=user['role_name_code'], is_active=user['is_active'])
 
 
 @app.get('/author/categories')
@@ -254,10 +254,10 @@ def author_questions_page():
         JOIN question_type qt ON qt.type_id = q.type_id
         JOIN category c ON c.id_category = q.id_category
         JOIN difficulty_level d ON d.id_level = q.id_level
-        WHERE q.uid_author = :uid
+        WHERE q.uid_author = :user_id
         ORDER BY q.id_question DESC
         ''',
-        {'uid': session['uid']},
+        {'user_id': session['user_id']},
     )
     return render_template('author_questions.html', questions=questions)
 
@@ -286,7 +286,7 @@ def create_question_submit():
                 cur.callproc(
                     'quiz_platform.add_question',
                     [
-                        session['uid'],
+                        session['user_id'],
                         form.get('question_text', '').strip(),
                         int(form.get('id_category')),
                         int(form.get('id_level')),
@@ -322,9 +322,9 @@ def author_question_detail_page(id_question):
         JOIN question_type qt ON qt.type_id = q.type_id
         JOIN category c ON c.id_category = q.id_category
         JOIN difficulty_level d ON d.id_level = q.id_level
-        WHERE q.id_question = :id_question AND q.uid_author = :uid
+        WHERE q.id_question = :id_question AND q.uid_author = :user_id
         ''',
-        {'id_question': id_question, 'uid': session['uid']},
+        {'id_question': id_question, 'user_id': session['user_id']},
     )
     if not rows:
         flash('Вопрос не найден.', 'error')
@@ -341,8 +341,8 @@ def author_question_deactivate(id_question):
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    'UPDATE question SET is_active = 0 WHERE id_question = :id_question AND uid_author = :uid',
-                    {'id_question': id_question, 'uid': session['uid']},
+                    'UPDATE question SET is_active = 0 WHERE id_question = :id_question AND uid_author = :user_id',
+                    {'id_question': id_question, 'user_id': session['user_id']},
                 )
                 if cur.rowcount == 0:
                     flash('Вопрос не найден.', 'error')
@@ -359,7 +359,7 @@ def author_question_options_page(id_question):
     access = require_author_role()
     if access:
         return access
-    question = fetch_list('SELECT id_question, question_text FROM question WHERE id_question = :id_question AND uid_author = :uid', {'id_question': id_question, 'uid': session['uid']})
+    question = fetch_list('SELECT id_question, question_text FROM question WHERE id_question = :id_question AND uid_author = :user_id', {'id_question': id_question, 'user_id': session['user_id']})
     if not question:
         flash('Вопрос не найден.', 'error')
         return redirect(url_for('author_questions_page'))
@@ -400,18 +400,18 @@ def tests_page():
                NVL((
                    SELECT MAX(a.attempt_number)
                    FROM attempt a
-                   WHERE a.uid = :uid AND a.id_test = t.id_test
+                   WHERE a.user_id = :user_id AND a.id_test = t.id_test
                ), 0) AS used_attempts
         FROM test_access ta
         JOIN test t ON t.id_test = ta.id_test
         LEFT JOIN category c ON c.id_category = t.id_category
         LEFT JOIN difficulty_level d ON d.id_level = t.id_level
-        WHERE ta.uid = :uid
+        WHERE ta.user_id = :user_id
           AND ta.is_active = 1
           AND t.is_active = 1
         ORDER BY t.id_test DESC
         ''',
-        {'uid': session['uid']},
+        {'user_id': session['user_id']},
     )
     return render_template('tests.html', tests=tests)
 
@@ -423,7 +423,7 @@ def test_detail_page(id_test):
         return auth
     with get_connection() as conn:
         with conn.cursor() as cur:
-            has_access = int(cur.callfunc('quiz_platform.check_access', int, [id_test, session['uid']]))
+            has_access = int(cur.callfunc('quiz_platform.check_access', int, [id_test, session['user_id']]))
     if has_access != 1:
         flash('Нет доступа к тесту.', 'error')
         return redirect(url_for('tests_page'))
@@ -435,14 +435,14 @@ def test_detail_page(id_test):
                NVL((
                    SELECT MAX(a.attempt_number)
                    FROM attempt a
-                   WHERE a.uid = :uid AND a.id_test = t.id_test
+                   WHERE a.user_id = :user_id AND a.id_test = t.id_test
                ), 0) AS used_attempts
         FROM test t
         LEFT JOIN category c ON c.id_category = t.id_category
         LEFT JOIN difficulty_level d ON d.id_level = t.id_level
         WHERE t.id_test = :id_test AND t.is_active = 1
         ''',
-        {'id_test': id_test, 'uid': session['uid']},
+        {'id_test': id_test, 'user_id': session['user_id']},
     )
     if not test:
         flash('Тест не найден.', 'error')
@@ -457,16 +457,34 @@ def attempt_page(id_attempt):
         return auth
     attempt_rows = fetch_list(
         '''
-        SELECT a.id_attempt, a.status, a.start_date, a.end_date, t.id_test, t.test_name
+        SELECT a.id_attempt, a.status, a.start_date, a.end_date, t.id_test, t.test_name,
+               t.time_limit,
+               FLOOR((SYSDATE - a.start_date) * 86400) AS elapsed_seconds,
+               CASE
+                   WHEN t.time_limit IS NULL THEN NULL
+                   ELSE GREATEST(0, t.time_limit - FLOOR((SYSDATE - a.start_date) * 86400))
+               END AS remaining_seconds
         FROM attempt a
         JOIN test t ON t.id_test = a.id_test
-        WHERE a.id_attempt = :id_attempt AND a.uid = :uid
+        WHERE a.id_attempt = :id_attempt AND a.user_id = :user_id
         ''',
-        {'id_attempt': id_attempt, 'uid': session['uid']},
+        {'id_attempt': id_attempt, 'user_id': session['user_id']},
     )
     if not attempt_rows:
         flash('Попытка не найдена.', 'error')
         return redirect(url_for('my_attempts_page'))
+    attempt = attempt_rows[0]
+
+    if attempt[1] == 'STARTED' and attempt[6] is not None and attempt[8] <= 0:
+        try:
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.callproc('quiz_platform.finish_attempt', [id_attempt])
+                conn.commit()
+            flash('Время теста истекло. Попытка завершена автоматически.', 'error')
+            return redirect(url_for('result_page', id_attempt=id_attempt))
+        except oracledb.DatabaseError as exc:
+            flash(f'Ошибка завершения попытки: {exc.args[0].message}', 'error')
 
     questions = fetch_list(
         '''
@@ -502,16 +520,18 @@ def attempt_page(id_attempt):
 
     selected_rows = fetch_list(
         '''
-        SELECT aso.id_answer, aso.id_option
+        SELECT aso.id_answer, aso.id_option, ao.option_text
         FROM answer_selected_option aso
         JOIN answer a ON a.id_answer = aso.id_answer
+        JOIN answer_option ao ON ao.id_option = aso.id_option
         WHERE a.id_attempt = :id_attempt
+        ORDER BY ao.id_option
         ''',
         {'id_attempt': id_attempt},
     )
     by_answer_id = {}
     for r in selected_rows:
-        by_answer_id.setdefault(r[0], []).append(r[1])
+        by_answer_id.setdefault(r[0], []).append({'id_option': r[1], 'option_text': r[2]})
 
     option_map = {}
     for row in fetch_list(
@@ -530,11 +550,24 @@ def attempt_page(id_attempt):
 
     for info in answer_map.values():
         info['selected_options'] = by_answer_id.get(info['id_answer'], [])
+        info['selected_option_ids'] = [opt['id_option'] for opt in info['selected_options']]
+
+    answered_count = len(answer_map)
+    total_questions = len(questions)
+    current_question = None
+    if attempt[1] == 'STARTED':
+        for question in questions:
+            if question[0] not in answer_map:
+                current_question = question
+                break
 
     return render_template(
         'attempt.html',
-        attempt=attempt_rows[0],
+        attempt=attempt,
         questions=questions,
+        current_question=current_question,
+        answered_count=answered_count,
+        total_questions=total_questions,
         option_map=option_map,
         answer_map=answer_map,
     )
@@ -548,7 +581,7 @@ def start_test_page(id_test):
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.callproc('quiz_platform.start_attempt', [id_test, session['uid']])
+                cur.callproc('quiz_platform.start_attempt', [id_test, session['user_id']])
                 cur.execute('SELECT seq_attempt.CURRVAL FROM dual')
                 new_attempt_id = cur.fetchone()[0]
             conn.commit()
@@ -568,7 +601,10 @@ def save_attempt_answer_page(id_attempt):
         flash('Неверный вопрос попытки.', 'error')
         return redirect(url_for('attempt_page', id_attempt=id_attempt))
     id_qt = int(id_qt_raw)
-    answer_time = int(request.form.get('answer_time', '0') or 0)
+    try:
+        answer_time = max(0, int(request.form.get('answer_time', '0') or 0))
+    except ValueError:
+        answer_time = 0
     answer_text = request.form.get('answer_text') or None
     answer_number_raw = request.form.get('answer_number', '').strip()
     answer_number = float(answer_number_raw) if answer_number_raw else None
@@ -623,9 +659,9 @@ def result_page(id_attempt):
                ), 0) AS avg_percent
         FROM attempt a
         JOIN test t ON t.id_test = a.id_test
-        WHERE a.id_attempt = :id_attempt AND a.uid = :uid
+        WHERE a.id_attempt = :id_attempt AND a.user_id = :user_id
         ''',
-        {'id_attempt': id_attempt, 'uid': session['uid']},
+        {'id_attempt': id_attempt, 'user_id': session['user_id']},
     )
     if not rows:
         flash('Результат не найден.', 'error')
@@ -634,18 +670,75 @@ def result_page(id_attempt):
 
     answers = []
     if result[9] == 1:
-        answers = fetch_list(
+        answer_rows = fetch_list(
             '''
-            SELECT qt.order_num, q.question_text, a.answer_text, a.answer_number, a.is_correct, a.earned_score,
-                   q.correct_text, q.correct_number, q.explanation
-            FROM answer a
-            JOIN question_in_test qt ON qt.id_qt = a.id_qt
+            SELECT qt.order_num, q.question_text, q.type_id, a.id_answer, a.answer_text, a.answer_number,
+                   a.is_correct, a.earned_score, q.correct_text, q.correct_number, q.explanation
+            FROM question_in_test qt
             JOIN question q ON q.id_question = qt.id_question
-            WHERE a.id_attempt = :id_attempt
+            JOIN attempt at ON at.id_test = qt.id_test
+            LEFT JOIN answer a ON a.id_qt = qt.id_qt AND a.id_attempt = at.id_attempt
+            WHERE at.id_attempt = :id_attempt
             ORDER BY qt.order_num
             ''',
             {'id_attempt': id_attempt},
         )
+
+        selected_options = {}
+        for row in fetch_list(
+            '''
+            SELECT aso.id_answer, ao.option_text
+            FROM answer_selected_option aso
+            JOIN answer_option ao ON ao.id_option = aso.id_option
+            JOIN answer a ON a.id_answer = aso.id_answer
+            WHERE a.id_attempt = :id_attempt
+            ORDER BY ao.id_option
+            ''',
+            {'id_attempt': id_attempt},
+        ):
+            selected_options.setdefault(row[0], []).append(row[1])
+
+        correct_options = {}
+        for row in fetch_list(
+            '''
+            SELECT qt.order_num, ao.option_text
+            FROM question_in_test qt
+            JOIN attempt at ON at.id_test = qt.id_test
+            JOIN answer_option ao ON ao.id_question = qt.id_question
+            WHERE at.id_attempt = :id_attempt
+              AND ao.is_correct = 1
+            ORDER BY qt.order_num, ao.id_option
+            ''',
+            {'id_attempt': id_attempt},
+        ):
+            correct_options.setdefault(row[0], []).append(row[1])
+
+        for row in answer_rows:
+            order_num = row[0]
+            type_id = row[2]
+            id_answer = row[3]
+            chosen_options = selected_options.get(id_answer, []) if id_answer is not None else []
+            valid_options = correct_options.get(order_num, [])
+
+            if type_id in (1, 2, 5):
+                user_answer = ', '.join(chosen_options) if chosen_options else '-'
+                correct_answer = ', '.join(valid_options) if valid_options else '-'
+            elif type_id == 4:
+                user_answer = row[5] if row[5] is not None else '-'
+                correct_answer = row[9] if row[9] is not None else '-'
+            else:
+                user_answer = row[4] if row[4] else '-'
+                correct_answer = row[8] if row[8] else '-'
+
+            answers.append({
+                'order_num': order_num,
+                'question_text': row[1],
+                'user_answer': user_answer,
+                'is_correct': row[6],
+                'earned_score': row[7],
+                'correct_answer': correct_answer,
+                'explanation': row[10],
+            })
 
     return render_template('result.html', result=result, answers=answers)
 
@@ -660,10 +753,10 @@ def my_attempts_page():
         SELECT a.id_attempt, t.test_name, a.attempt_number, a.status, a.score, a.percent_result, a.start_date, a.end_date
         FROM attempt a
         JOIN test t ON t.id_test = a.id_test
-        WHERE a.uid = :uid
+        WHERE a.user_id = :user_id
         ORDER BY a.id_attempt DESC
         ''',
-        {'uid': session['uid']},
+        {'user_id': session['user_id']},
     )
     return render_template('my_attempts.html', attempts=attempts)
 
@@ -681,10 +774,10 @@ def author_tests_page():
         FROM test t
         LEFT JOIN category c ON c.id_category = t.id_category
         LEFT JOIN difficulty_level d ON d.id_level = t.id_level
-        WHERE t.uid_author = :uid
+        WHERE t.uid_author = :user_id
         ORDER BY t.id_test DESC
         ''',
-        {'uid': session['uid']},
+        {'user_id': session['user_id']},
     )
     return render_template('author_tests.html', tests=tests)
 
@@ -702,7 +795,7 @@ def create_test_page():
                     cur.callproc(
                         'quiz_platform.create_test',
                         [
-                            session['uid'],
+                            session['user_id'],
                             form.get('test_name', '').strip(),
                             form.get('test_description') or None,
                             int(form.get('id_category')) if form.get('id_category') else None,
@@ -740,9 +833,9 @@ def author_test_detail_page(id_test):
         FROM test t
         LEFT JOIN category c ON c.id_category = t.id_category
         LEFT JOIN difficulty_level d ON d.id_level = t.id_level
-        WHERE t.id_test = :id_test AND t.uid_author = :uid
+        WHERE t.id_test = :id_test AND t.uid_author = :user_id
         ''',
-        {'id_test': id_test, 'uid': session['uid']},
+        {'id_test': id_test, 'user_id': session['user_id']},
     )
     if not test:
         flash('Тест не найден.', 'error')
@@ -805,14 +898,14 @@ def author_test_questions_page(id_test):
         FROM question q
         JOIN test t ON t.uid_author = q.uid_author
         WHERE t.id_test = :id_test
-          AND q.uid_author = :uid
+          AND q.uid_author = :user_id
           AND q.is_active = 1
           AND NOT EXISTS (
               SELECT 1 FROM question_in_test x WHERE x.id_test = :id_test AND x.id_question = q.id_question
           )
         ORDER BY q.id_question DESC
         ''',
-        {'id_test': id_test, 'uid': session['uid']},
+        {'id_test': id_test, 'user_id': session['user_id']},
     )
     return render_template('author_test_questions.html', id_test=id_test, selected=selected, pool=pool)
 
@@ -854,15 +947,15 @@ def test_access_page(id_test):
     access = require_author_role()
     if access:
         return access
-    owner_test = fetch_list('SELECT id_test, test_name FROM test WHERE id_test = :id_test AND uid_author = :uid', {'id_test': id_test, 'uid': session['uid']})
+    owner_test = fetch_list('SELECT id_test, test_name FROM test WHERE id_test = :id_test AND uid_author = :user_id', {'id_test': id_test, 'user_id': session['user_id']})
     if not owner_test:
         flash('Тест не найден.', 'error')
         return redirect(url_for('author_tests_page'))
     granted = fetch_list(
         '''
-        SELECT ta.uid, u.user_name, ta.is_active, ta.granted_at
+        SELECT ta.user_id, u.user_name, ta.is_active, ta.granted_at
         FROM test_access ta
-        JOIN users u ON u.uid = ta.uid
+        JOIN users u ON u.user_id = ta.user_id
         WHERE ta.id_test = :id_test
         ORDER BY ta.granted_at DESC
         ''',
@@ -876,9 +969,9 @@ def test_access_grant_page(id_test):
     access = require_author_role()
     if access:
         return access
-    uid_raw = request.form.get('uid', '').strip()
+    uid_raw = request.form.get('user_id', '').strip()
     if not uid_raw.isdigit():
-        flash('UID должен быть числом.', 'error')
+        flash('user_id должен быть числом.', 'error')
         return redirect(url_for('test_access_page', id_test=id_test))
     try:
         with get_connection() as conn:
@@ -891,8 +984,8 @@ def test_access_grant_page(id_test):
     return redirect(url_for('test_access_page', id_test=id_test))
 
 
-@app.post('/author/tests/<int:id_test>/access/<int:uid>/deactivate')
-def test_access_deactivate_page(id_test, uid):
+@app.post('/author/tests/<int:id_test>/access/<int:user_id>/deactivate')
+def test_access_deactivate_page(id_test, user_id):
     access = require_author_role()
     if access:
         return access
@@ -904,13 +997,13 @@ def test_access_deactivate_page(id_test, uid):
                     UPDATE test_access ta
                     SET ta.is_active = 0
                     WHERE ta.id_test = :id_test
-                      AND ta.uid = :uid
+                      AND ta.user_id = :user_id
                       AND EXISTS (
                         SELECT 1 FROM test t
                         WHERE t.id_test = ta.id_test AND t.uid_author = :author_uid
                       )
                     ''',
-                    {'id_test': id_test, 'uid': uid, 'author_uid': session['uid']},
+                    {'id_test': id_test, 'user_id': user_id, 'author_uid': session['user_id']},
                 )
             conn.commit()
         flash('Доступ деактивирован.', 'success')
@@ -924,7 +1017,7 @@ def statistics_page(id_test):
     access = require_author_role()
     if access:
         return access
-    owner = fetch_list('SELECT id_test, test_name FROM test WHERE id_test = :id_test AND uid_author = :uid', {'id_test': id_test, 'uid': session['uid']})
+    owner = fetch_list('SELECT id_test, test_name FROM test WHERE id_test = :id_test AND uid_author = :user_id', {'id_test': id_test, 'user_id': session['user_id']})
     if not owner:
         flash('Тест не найден.', 'error')
         return redirect(url_for('author_tests_page'))
@@ -977,10 +1070,10 @@ def admin_users_page():
         return access
     users = fetch_list(
         '''
-        SELECT u.uid, u.user_name, r.role_name, u.is_active, u.created_at
+        SELECT u.user_id, u.user_name, r.role_name, u.is_active, u.created_at
         FROM users u
         JOIN role r ON r.id_role = u.id_role
-        ORDER BY u.uid DESC
+        ORDER BY u.user_id DESC
         '''
     )
     return render_template('admin_users.html', users=users)
@@ -995,7 +1088,7 @@ def admin_tests_page():
         '''
         SELECT t.id_test, t.test_name, u.user_name, t.is_active, t.created_at, t.attempt_limit, t.question_count
         FROM test t
-        JOIN users u ON u.uid = t.uid_author
+        JOIN users u ON u.user_id = t.uid_author
         ORDER BY t.id_test DESC
         '''
     )
@@ -1011,7 +1104,7 @@ def admin_questions_page():
         '''
         SELECT q.id_question, q.question_text, u.user_name, qt.type_name, q.is_active, q.created_at
         FROM question q
-        JOIN users u ON u.uid = q.uid_author
+        JOIN users u ON u.user_id = q.uid_author
         JOIN question_type qt ON qt.type_id = q.type_id
         ORDER BY q.id_question DESC
         '''

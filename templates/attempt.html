@@ -1,55 +1,122 @@
-﻿{% extends 'base.html' %}
+{% extends 'base.html' %}
 {% block title %}Прохождение теста - Qwiz{% endblock %}
 {% block content %}
 <h2>Прохождение: {{ attempt[5] }}</h2>
 <p><strong>Попытка:</strong> #{{ attempt[0] }} | <strong>Статус:</strong> {{ attempt[1] }}</p>
+<p><strong>Прогресс:</strong> {{ answered_count }} / {{ total_questions }}</p>
 
 {% if attempt[1] == 'STARTED' %}
-  <form method="post" action="/attempts/{{ attempt[0] }}/finish">
-    <button type="submit">Завершить попытку</button>
-  </form>
+  {% if attempt[6] %}
+    <p>
+      <strong>Осталось времени:</strong>
+      <span id="test-timer" data-remaining-seconds="{{ attempt[8] }}">{{ attempt[8] }}</span>
+    </p>
+  {% endif %}
+  {% if not current_question %}
+    <p>Все вопросы отвечены.</p>
+    <form id="finish-attempt-form" method="post" action="/attempts/{{ attempt[0] }}/finish">
+      <button type="submit">Завершить попытку</button>
+    </form>
+  {% else %}
+    <form id="finish-attempt-form" method="post" action="/attempts/{{ attempt[0] }}/finish" style="display:none;"></form>
+  {% endif %}
 {% else %}
   <p><a href="/attempts/{{ attempt[0] }}/result">Смотреть результат</a></p>
 {% endif %}
 
-<h3>Вопросы</h3>
-{% for q in questions %}
-  <div style="padding:10px; border:1px solid #ddd; margin-bottom:10px;">
-    <p><strong>{{ q[1] }}.</strong> {{ q[5] }}</p>
-    <p>Вес: {{ q[2] }}{% if q[3] %} | Лимит на вопрос: {{ q[3] }} сек{% endif %}</p>
+{% if attempt[1] == 'STARTED' and current_question %}
+  {% set visible_questions = [current_question] %}
+{% elif attempt[1] == 'STARTED' %}
+  {% set visible_questions = [] %}
+{% else %}
+  {% set visible_questions = questions %}
+{% endif %}
 
-    {% set a = answer_map.get(q[0]) %}
-    {% if a %}
-      <p><strong>Ответ сохранен.</strong> Балл: {{ a.earned_score if a.earned_score is not none else '-' }}</p>
-    {% elif attempt[1] == 'STARTED' %}
-      <form method="post" action="/attempts/{{ attempt[0] }}/answer">
-        <input type="hidden" name="id_qt" value="{{ q[0] }}">
+{% if visible_questions %}
+  <h3>{% if attempt[1] == 'STARTED' %}Текущий вопрос{% else %}Вопросы{% endif %}</h3>
+  {% for q in visible_questions %}
+    <div style="padding:10px; border:1px solid #ddd; margin-bottom:10px;">
+      <p><strong>{{ q[1] }}.</strong> {{ q[5] }}</p>
+      <p>Вес: {{ q[2] }}{% if q[3] %} | Лимит на вопрос: {{ q[3] }} сек{% endif %}</p>
 
+      {% set a = answer_map.get(q[0]) %}
+      {% if a and attempt[1] != 'STARTED' %}
         {% if q[6] in [1,2,5] %}
-          {% for opt in option_map.get(q[4], []) %}
-            <label style="display:block;">
-              <input type="{% if q[6] in [1,5] %}radio{% else %}checkbox{% endif %}" name="selected_option_ids" value="{{ opt.id_option }}">
-              {{ opt.option_text }}
-            </label>
-          {% endfor %}
+          {% set saved_answer = a.selected_options | map(attribute='option_text') | join(', ') %}
+        {% elif q[6] == 4 %}
+          {% set saved_answer = a.answer_number if a.answer_number is not none else '-' %}
+        {% else %}
+          {% set saved_answer = a.answer_text if a.answer_text else '-' %}
         {% endif %}
+        <p><strong>Ответ сохранен.</strong> Балл: {{ a.earned_score if a.earned_score is not none else '-' }}</p>
+        <p><strong>Ваш ответ:</strong> {{ saved_answer if saved_answer else '-' }}</p>
+      {% elif attempt[1] == 'STARTED' %}
+        <form class="answer-form" method="post" action="/attempts/{{ attempt[0] }}/answer">
+          <input type="hidden" name="id_qt" value="{{ q[0] }}">
+          <input type="hidden" name="answer_time" value="0">
 
-        {% if q[6] in [3,6] %}
-          <label>Текстовый ответ</label>
-          <input type="text" name="answer_text">
-        {% endif %}
+          {% if q[6] in [1,2,5] %}
+            {% for opt in option_map.get(q[4], []) %}
+              <label style="display:block;">
+                <input type="{% if q[6] in [1,5] %}radio{% else %}checkbox{% endif %}" name="selected_option_ids" value="{{ opt.id_option }}">
+                {{ opt.option_text }}
+              </label>
+            {% endfor %}
+          {% endif %}
 
-        {% if q[6] == 4 %}
-          <label>Числовой ответ</label>
-          <input type="number" step="any" name="answer_number">
-        {% endif %}
+          {% if q[6] in [3,6] %}
+            <label>Текстовый ответ</label>
+            <input type="text" name="answer_text">
+          {% endif %}
 
-        <label>Время ответа (сек)</label>
-        <input type="number" name="answer_time" min="0" value="0">
+          {% if q[6] == 4 %}
+            <label>Числовой ответ</label>
+            <input type="number" step="any" name="answer_number">
+          {% endif %}
 
-        <button type="submit">Сохранить ответ</button>
-      </form>
-    {% endif %}
-  </div>
-{% endfor %}
+          <button type="submit">Сохранить ответ</button>
+        </form>
+      {% endif %}
+    </div>
+  {% endfor %}
+{% endif %}
+
+<script>
+  (function () {
+    var timer = document.getElementById('test-timer');
+    var finishForm = document.getElementById('finish-attempt-form');
+    var startedAt = Date.now();
+
+    function formatSeconds(totalSeconds) {
+      var seconds = Math.max(0, Number(totalSeconds) || 0);
+      var minutes = Math.floor(seconds / 60);
+      var rest = seconds % 60;
+      return String(minutes).padStart(2, '0') + ':' + String(rest).padStart(2, '0');
+    }
+
+    if (timer && finishForm) {
+      var remaining = parseInt(timer.dataset.remainingSeconds || '0', 10);
+      timer.textContent = formatSeconds(remaining);
+
+      var intervalId = window.setInterval(function () {
+        remaining -= 1;
+        timer.textContent = formatSeconds(remaining);
+
+        if (remaining <= 0) {
+          window.clearInterval(intervalId);
+          finishForm.submit();
+        }
+      }, 1000);
+    }
+
+    document.querySelectorAll('.answer-form').forEach(function (form) {
+      form.addEventListener('submit', function () {
+        var answerTimeInput = form.querySelector('input[name="answer_time"]');
+        if (answerTimeInput) {
+          answerTimeInput.value = String(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+        }
+      });
+    });
+  })();
+</script>
 {% endblock %}

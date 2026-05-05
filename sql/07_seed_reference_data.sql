@@ -1,4 +1,4 @@
-﻿MERGE INTO role r
+MERGE INTO role r
 USING (
     SELECT 1 id_role, 'USER' role_name, 'Обычный пользователь' role_description FROM dual UNION ALL
     SELECT 2, 'AUTHOR', 'Автор тестов' FROM dual UNION ALL

@@ -1,4 +1,4 @@
-﻿CREATE OR REPLACE PACKAGE quiz_platform AS
+CREATE OR REPLACE PACKAGE quiz_platform AS
     PROCEDURE info;
     PROCEDURE register_user(p_user_name VARCHAR2, p_password VARCHAR2);
     FUNCTION login_user(p_uid NUMBER, p_password VARCHAR2) RETURN NUMBER;

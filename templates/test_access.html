@@ -1,11 +1,11 @@
-﻿{% extends 'base.html' %}
+{% extends 'base.html' %}
 {% block title %}Доступ к тесту - Qwiz{% endblock %}
 {% block content %}
 <h2>Доступ к тесту #{{ id_test }}: {{ test_name }}</h2>
 
 <form method="post" action="/author/tests/{{ id_test }}/access">
-  <label>UID пользователя</label>
-  <input type="number" name="uid" min="1" required>
+  <label>ID пользователя</label>
+  <input type="number" name="user_id" min="1" required>
   <button type="submit">Выдать доступ</button>
 </form>
 
@@ -13,7 +13,7 @@
 <ul>
   {% for g in granted %}
     <li>
-      UID {{ g[0] }} | {{ g[1] }} | Статус: {{ 'Активен' if g[2] == 1 else 'Отключен' }} | Выдан: {{ g[3] }}
+      ID {{ g[0] }} | {{ g[1] }} | Статус: {{ 'Активен' if g[2] == 1 else 'Отключен' }} | Выдан: {{ g[3] }}
       {% if g[2] == 1 %}
       <form method="post" action="/author/tests/{{ id_test }}/access/{{ g[0] }}/deactivate" style="display:inline; margin-left: 10px;">
         <button type="submit">Деактивировать</button>

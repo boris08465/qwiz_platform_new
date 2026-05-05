@@ -1,10 +1,11 @@
-﻿CREATE OR REPLACE PACKAGE BODY quiz_platform AS
+CREATE OR REPLACE PACKAGE BODY quiz_platform AS
     PROCEDURE info IS
     BEGIN
         DBMS_OUTPUT.PUT_LINE('quiz_platform package loaded');
     END;
 
     PROCEDURE register_user(p_user_name VARCHAR2, p_password VARCHAR2) IS
+        v_password_hash users.password_hash%TYPE;
     BEGIN
         IF p_user_name IS NULL OR LENGTH(TRIM(p_user_name)) = 0 THEN
             RAISE_APPLICATION_ERROR(-20010, 'Имя пользователя не может быть пустым');
@@ -13,30 +14,35 @@
             RAISE_APPLICATION_ERROR(-20011, 'Пароль слишком короткий');
         END IF;
 
+        SELECT STANDARD_HASH(p_password, 'SHA256') INTO v_password_hash FROM dual;
+
         INSERT INTO users (id_role, password_hash, user_name, created_at, is_active)
-        VALUES (1, STANDARD_HASH(p_password, 'SHA256'), TRIM(p_user_name), SYSDATE, 1);
+        VALUES (1, v_password_hash, TRIM(p_user_name), SYSDATE, 1);
     END;
 
     FUNCTION login_user(p_uid NUMBER, p_password VARCHAR2) RETURN NUMBER IS
         v_role_id users.id_role%TYPE;
         v_hash users.password_hash%TYPE;
+        v_password_hash users.password_hash%TYPE;
         v_active users.is_active%TYPE;
     BEGIN
         BEGIN
             SELECT id_role, password_hash, is_active
             INTO v_role_id, v_hash, v_active
             FROM users
-            WHERE uid = p_uid;
+            WHERE user_id = p_uid;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
-                RAISE_APPLICATION_ERROR(-20001, 'Неверный UID');
+                RAISE_APPLICATION_ERROR(-20001, 'Неверный user_id');
         END;
 
         IF v_active <> 1 THEN
             RAISE_APPLICATION_ERROR(-20002, 'Пользователь неактивен');
         END IF;
 
-        IF v_hash <> STANDARD_HASH(p_password, 'SHA256') THEN
+        SELECT STANDARD_HASH(p_password, 'SHA256') INTO v_password_hash FROM dual;
+
+        IF v_hash <> v_password_hash THEN
             RAISE_APPLICATION_ERROR(-20003, 'Неверный пароль');
         END IF;
 
@@ -68,7 +74,7 @@
 
         SELECT COUNT(*) INTO v_author_cnt
         FROM users
-        WHERE uid = p_uid_author AND is_active = 1;
+        WHERE user_id = p_uid_author AND is_active = 1;
 
         IF v_author_cnt = 0 THEN
             RAISE_APPLICATION_ERROR(-20103, 'Автор не найден или неактивен');
@@ -197,7 +203,7 @@
         IF p_question_text IS NULL OR LENGTH(TRIM(p_question_text)) = 0 THEN
             RAISE_APPLICATION_ERROR(-20021, 'Текст вопроса не может быть пустым');
         END IF;
-        SELECT COUNT(*) INTO v_user_cnt FROM users WHERE uid = p_uid_author AND is_active = 1;
+        SELECT COUNT(*) INTO v_user_cnt FROM users WHERE user_id = p_uid_author AND is_active = 1;
         IF v_user_cnt = 0 THEN
             RAISE_APPLICATION_ERROR(-20022, 'Автор не найден или неактивен');
         END IF;
@@ -229,7 +235,7 @@
         v_user_cnt NUMBER;
         v_test_cnt NUMBER;
     BEGIN
-        SELECT COUNT(*) INTO v_user_cnt FROM users WHERE uid = p_uid AND is_active = 1;
+        SELECT COUNT(*) INTO v_user_cnt FROM users WHERE user_id = p_uid AND is_active = 1;
         IF v_user_cnt = 0 THEN
             RAISE_APPLICATION_ERROR(-20200, 'Пользователь не найден или неактивен');
         END IF;
@@ -240,13 +246,13 @@
         END IF;
 
         MERGE INTO test_access ta
-        USING (SELECT p_uid uid, p_id_test id_test FROM dual) src
-        ON (ta.uid = src.uid AND ta.id_test = src.id_test)
+        USING (SELECT p_uid user_id, p_id_test id_test FROM dual) src
+        ON (ta.user_id = src.user_id AND ta.id_test = src.id_test)
         WHEN MATCHED THEN
             UPDATE SET ta.is_active = 1, ta.granted_at = SYSDATE
         WHEN NOT MATCHED THEN
-            INSERT (uid, id_test, granted_at, is_active)
-            VALUES (src.uid, src.id_test, SYSDATE, 1);
+            INSERT (user_id, id_test, granted_at, is_active)
+            VALUES (src.user_id, src.id_test, SYSDATE, 1);
     END;
 
     FUNCTION check_access(p_id_test NUMBER, p_uid NUMBER) RETURN NUMBER IS
@@ -256,9 +262,9 @@
         INTO v_cnt
         FROM test_access ta
         JOIN test t ON t.id_test = ta.id_test
-        JOIN users u ON u.uid = ta.uid
+        JOIN users u ON u.user_id = ta.user_id
         WHERE ta.id_test = p_id_test
-          AND ta.uid = p_uid
+          AND ta.user_id = p_uid
           AND ta.is_active = 1
           AND t.is_active = 1
           AND u.is_active = 1;
@@ -276,7 +282,7 @@
         v_attempts_used NUMBER;
         v_attempt_no NUMBER;
     BEGIN
-        SELECT is_active INTO v_user_active FROM users WHERE uid = p_uid;
+        SELECT is_active INTO v_user_active FROM users WHERE user_id = p_uid;
         IF v_user_active <> 1 THEN
             RAISE_APPLICATION_ERROR(-20300, 'Пользователь неактивен');
         END IF;
@@ -297,13 +303,13 @@
         SELECT NVL(MAX(attempt_number), 0)
         INTO v_attempts_used
         FROM attempt
-        WHERE uid = p_uid AND id_test = p_id_test;
+        WHERE user_id = p_uid AND id_test = p_id_test;
         IF v_attempts_used >= v_attempt_limit THEN
             RAISE_APPLICATION_ERROR(-20303, 'Превышен лимит попыток');
         END IF;
 
         v_attempt_no := v_attempts_used + 1;
-        INSERT INTO attempt (uid, id_test, attempt_number, start_date, status, finished_in_time)
+        INSERT INTO attempt (user_id, id_test, attempt_number, start_date, status, finished_in_time)
         VALUES (p_uid, p_id_test, v_attempt_no, SYSDATE, 'STARTED', 1);
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
@@ -318,12 +324,12 @@
         p_answer_time NUMBER
     ) IS
         v_status attempt.status%TYPE;
-        v_uid attempt.uid%TYPE;
+        v_uid attempt.user_id%TYPE;
         v_test_id attempt.id_test%TYPE;
         v_started DATE;
         v_test_time_limit NUMBER;
     BEGIN
-        SELECT a.status, a.uid, a.id_test, a.start_date, t.time_limit
+        SELECT a.status, a.user_id, a.id_test, a.start_date, t.time_limit
         INTO v_status, v_uid, v_test_id, v_started, v_test_time_limit
         FROM attempt a
         JOIN test t ON t.id_test = a.id_test
@@ -620,7 +626,7 @@
             SELECT a.id_attempt, t.test_name, a.attempt_number, a.status, a.score, a.percent_result
             FROM attempt a
             JOIN test t ON t.id_test = a.id_test
-            WHERE a.uid = p_uid
+            WHERE a.user_id = p_uid
             ORDER BY a.id_attempt DESC
         ) LOOP
             v_found := 1;

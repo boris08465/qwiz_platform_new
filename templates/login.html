@@ -1,10 +1,10 @@
-﻿{% extends 'base.html' %}
+{% extends 'base.html' %}
 {% block title %}Вход - Qwiz{% endblock %}
 {% block content %}
 <h2>Вход</h2>
 <form method="post">
-  <label for="uid">UID</label>
-  <input id="uid" name="uid" type="number" min="1" required>
+  <label for="user_id">ID пользователя</label>
+  <input id="user_id" name="user_id" type="number" min="1" required>
 
   <label for="password">Пароль</label>
   <input id="password" name="password" type="password" required>

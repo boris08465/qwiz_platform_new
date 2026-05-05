@@ -1,4 +1,4 @@
-﻿CREATE OR REPLACE TRIGGER trg_role_bi
+CREATE OR REPLACE TRIGGER trg_role_bi
 BEFORE INSERT ON role
 FOR EACH ROW
 BEGIN
@@ -12,8 +12,8 @@ CREATE OR REPLACE TRIGGER trg_users_bi
 BEFORE INSERT ON users
 FOR EACH ROW
 BEGIN
-    IF :NEW.uid IS NULL THEN
-        :NEW.uid := seq_users.NEXTVAL;
+    IF :NEW.user_id IS NULL THEN
+        :NEW.user_id := seq_users.NEXTVAL;
     END IF;
     IF :NEW.created_at IS NULL THEN
         :NEW.created_at := SYSDATE;
