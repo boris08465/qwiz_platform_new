@@ -41,9 +41,9 @@
 
       {% set a = answer_map.get(q[0]) %}
       {% if a and attempt[1] != 'STARTED' %}
-        {% if q[6] in [1,2,5] %}
+        {% if q[8] == 1 %}
           {% set saved_answer = a.selected_options | map(attribute='option_text') | join(', ') %}
-        {% elif q[6] == 4 %}
+        {% elif q[10] == 1 %}
           {% set saved_answer = a.answer_number if a.answer_number is not none else '-' %}
         {% else %}
           {% set saved_answer = a.answer_text if a.answer_text else '-' %}
@@ -55,21 +55,21 @@
           <input type="hidden" name="id_qt" value="{{ q[0] }}">
           <input type="hidden" name="answer_time" value="0">
 
-          {% if q[6] in [1,2,5] %}
+          {% if q[8] == 1 %}
             {% for opt in option_map.get(q[4], []) %}
               <label style="display:block;">
-                <input type="{% if q[6] in [1,5] %}radio{% else %}checkbox{% endif %}" name="selected_option_ids" value="{{ opt.id_option }}">
+                <input type="{% if q[9] == 1 %}checkbox{% else %}radio{% endif %}" name="selected_option_ids" value="{{ opt.id_option }}">
                 {{ opt.option_text }}
               </label>
             {% endfor %}
           {% endif %}
 
-          {% if q[6] in [3,6] %}
+          {% if q[11] == 1 %}
             <label>Текстовый ответ</label>
             <input type="text" name="answer_text">
           {% endif %}
 
-          {% if q[6] == 4 %}
+          {% if q[10] == 1 %}
             <label>Числовой ответ</label>
             <input type="number" step="any" name="answer_number">
           {% endif %}

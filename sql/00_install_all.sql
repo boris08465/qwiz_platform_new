@@ -19,6 +19,7 @@ BEGIN
         SELECT 'TABLE', 'answer_selected_option' FROM dual UNION ALL
         SELECT 'TABLE', 'answer' FROM dual UNION ALL
         SELECT 'TABLE', 'attempt' FROM dual UNION ALL
+        SELECT 'TABLE', 'attempt_status' FROM dual UNION ALL
         SELECT 'TABLE', 'test_access' FROM dual UNION ALL
         SELECT 'TABLE', 'question_in_test' FROM dual UNION ALL
         SELECT 'TABLE', 'answer_option' FROM dual UNION ALL

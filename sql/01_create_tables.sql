@@ -28,7 +28,25 @@ CREATE TABLE difficulty_level (
 
 CREATE TABLE question_type (
     type_id NUMBER PRIMARY KEY,
-    type_name VARCHAR2(50 CHAR) NOT NULL UNIQUE
+    type_code VARCHAR2(30 CHAR) NOT NULL UNIQUE,
+    type_name VARCHAR2(50 CHAR) NOT NULL UNIQUE,
+    uses_options NUMBER(1) NOT NULL,
+    is_multi_select NUMBER(1) NOT NULL,
+    is_numeric_answer NUMBER(1) NOT NULL,
+    is_text_answer NUMBER(1) NOT NULL,
+    CONSTRAINT ck_qtype_uses_options CHECK (uses_options IN (0,1)),
+    CONSTRAINT ck_qtype_is_multi_select CHECK (is_multi_select IN (0,1)),
+    CONSTRAINT ck_qtype_is_numeric_answer CHECK (is_numeric_answer IN (0,1)),
+    CONSTRAINT ck_qtype_is_text_answer CHECK (is_text_answer IN (0,1))
+);
+
+CREATE TABLE attempt_status (
+    status_code VARCHAR2(30 CHAR) PRIMARY KEY,
+    status_name VARCHAR2(100 CHAR) NOT NULL,
+    is_terminal NUMBER(1) NOT NULL,
+    is_successful NUMBER(1) NOT NULL,
+    CONSTRAINT ck_attempt_status_terminal CHECK (is_terminal IN (0,1)),
+    CONSTRAINT ck_attempt_status_successful CHECK (is_successful IN (0,1))
 );
 
 CREATE TABLE test (
@@ -127,9 +145,9 @@ CREATE TABLE attempt (
     finished_in_time NUMBER(1) NOT NULL,
     CONSTRAINT fk_attempt_user FOREIGN KEY (user_id) REFERENCES users(user_id),
     CONSTRAINT fk_attempt_test FOREIGN KEY (id_test) REFERENCES test(id_test),
+    CONSTRAINT fk_attempt_status FOREIGN KEY (status) REFERENCES attempt_status(status_code),
     CONSTRAINT uq_attempt_user_test_num UNIQUE (user_id, id_test, attempt_number),
     CONSTRAINT ck_attempt_finished_in_time CHECK (finished_in_time IN (0,1)),
-    CONSTRAINT ck_attempt_status CHECK (status IN ('STARTED', 'FINISHED', 'TIME_EXPIRED', 'INTERRUPTED')),
     CONSTRAINT ck_attempt_attempt_number CHECK (attempt_number > 0),
     CONSTRAINT ck_attempt_percent_result CHECK (percent_result IS NULL OR (percent_result >= 0 AND percent_result <= 100))
 );
