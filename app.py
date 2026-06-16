@@ -412,7 +412,7 @@ def attempt_page(id_attempt):
         try:
             with get_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.callproc('quiz_platform.finish_attempt', [id_attempt])
+                    cur.callproc('quiz_platform.finish_attempt', [id_attempt, session['user_id']])
                 conn.commit()
             flash('Время теста истекло. Попытка завершена автоматически.', 'error')
             return redirect(url_for('result_page', id_attempt=id_attempt))
@@ -505,7 +505,7 @@ def save_attempt_answer_page(id_attempt):
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                new_answer_id = int(cur.callfunc('quiz_platform.save_answer_id', int, [id_attempt, id_qt, answer_text, answer_number, answer_time]))
+                new_answer_id = int(cur.callfunc('quiz_platform.save_answer_id', int, [id_attempt, id_qt, answer_text, answer_number, answer_time, session['user_id']]))
                 for opt_id in selected_option_ids:
                     cur.callproc('quiz_platform.save_selected_option', [new_answer_id, opt_id])
             conn.commit()
@@ -523,7 +523,7 @@ def finish_attempt_page(id_attempt):
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.callproc('quiz_platform.finish_attempt', [id_attempt])
+                cur.callproc('quiz_platform.finish_attempt', [id_attempt, session['user_id']])
             conn.commit()
         return redirect(url_for('result_page', id_attempt=id_attempt))
     except oracledb.DatabaseError as exc:
