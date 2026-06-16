@@ -79,6 +79,7 @@ CREATE TABLE question (
     id_level NUMBER NOT NULL,
     type_id NUMBER NOT NULL,
     question_text VARCHAR2(500 CHAR) NOT NULL,
+    image_path VARCHAR2(255 CHAR),
     explanation VARCHAR2(500 CHAR),
     correct_text VARCHAR2(500 CHAR),
     correct_number NUMBER,

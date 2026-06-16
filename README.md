@@ -10,22 +10,26 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-2. Поднять Oracle и выполнить инициализацию БД:
+2. Поднять Oracle и выполнить инициализацию БД.
+
+В DBeaver откройте `sql/00_install_all.sql` и запустите как SQL Script (`Alt+X`).
 
 ```powershell
-sqlplus system/oracle@localhost:1521/XEPDB1
+sqlplus system/oracle@10.22.10.49:1521/ORCL
 ```
 
 ```sql
 @sql\00_install_all.sql
 ```
 
+Для простых тестовых данных после установки можно отдельно выполнить `sql/08_seed_test_data.sql` как SQL Script.
+
 3. Задать переменные окружения (если отличаются от значений по умолчанию):
 
 ```powershell
-$env:DB_USER="system"
-$env:DB_PASSWORD="oracle"
-$env:DB_DSN="localhost:1521/XEPDB1"
+$env:DB_USER="KE2303_07"
+$env:DB_PASSWORD="KE2303_07"
+$env:DB_DSN="10.22.10.49:1521/ORCL"
 $env:SECRET_KEY="your-secret"
 ```
 

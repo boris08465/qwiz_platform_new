@@ -37,6 +37,9 @@
   {% for q in visible_questions %}
     <div style="padding:10px; border:1px solid #ddd; margin-bottom:10px;">
       <p><strong>{{ q[1] }}.</strong> {{ q[5] }}</p>
+      {% if q[12] %}
+        <p><img class="question-image" src="{{ url_for('static', filename=q[12]) }}" alt="Фото к вопросу"></p>
+      {% endif %}
       <p>Вес: {{ q[2] }}{% if q[3] %} | Лимит на вопрос: {{ q[3] }} сек{% endif %}</p>
 
       {% set a = answer_map.get(q[0]) %}

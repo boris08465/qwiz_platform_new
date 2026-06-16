@@ -1,18 +1,41 @@
 import os
+from pathlib import Path
+from uuid import uuid4
 
 import oracledb
 from flask import Flask, flash, redirect, render_template, request, session, url_for
+from werkzeug.utils import secure_filename
 
 from db import get_connection
 
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'change-me')
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
+
+QUESTION_UPLOAD_DIR = Path(app.root_path) / 'static' / 'uploads' / 'questions'
+QUESTION_UPLOAD_PREFIX = 'uploads/questions'
+ALLOWED_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
 
 ROLE_TITLE_FALLBACK = {
     'USER': 'Обычный пользователь',
     'AUTHOR': 'Автор тестов',
     'ADMIN': 'Администратор',
 }
+
+
+def save_question_image(file_storage, question_id):
+    if not file_storage or not file_storage.filename:
+        return None
+
+    original_name = secure_filename(file_storage.filename)
+    extension = original_name.rsplit('.', 1)[-1].lower() if '.' in original_name else ''
+    if extension not in ALLOWED_IMAGE_EXTENSIONS:
+        raise ValueError('Можно загрузить только изображение jpg, jpeg, png, gif или webp.')
+
+    QUESTION_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f'question_{question_id}_{uuid4().hex}.{extension}'
+    file_storage.save(QUESTION_UPLOAD_DIR / filename)
+    return f'{QUESTION_UPLOAD_PREFIX}/{filename}'
 
 
 def get_user_by_uid(user_id):
@@ -279,6 +302,7 @@ def create_question_submit():
         return access
 
     form = request.form
+    image_file = request.files.get('question_image')
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -297,10 +321,29 @@ def create_question_submit():
                         form.get('explanation') or None,
                     ],
                 ))
+                image_path = save_question_image(image_file, new_question_id)
+                if image_path:
+                    cur.execute(
+                        """
+                        UPDATE question
+                        SET image_path = :image_path
+                        WHERE id_question = :id_question
+                          AND uid_author = :uid_author
+                        """,
+                        image_path=image_path,
+                        id_question=new_question_id,
+                        uid_author=session['user_id'],
+                    )
             conn.commit()
         flash('Вопрос создан.', 'success')
         return redirect(url_for('author_question_detail_page', id_question=new_question_id))
-    except (ValueError, TypeError):
+    except ValueError as exc:
+        message = str(exc)
+        if message.startswith('Можно загрузить'):
+            flash(message, 'error')
+        else:
+            flash('Некорректные числовые параметры.', 'error')
+    except TypeError:
         flash('Некорректные числовые параметры.', 'error')
     except oracledb.DatabaseError as exc:
         flash(f'Ошибка создания вопроса: {exc.args[0].message}', 'error')
@@ -578,6 +621,7 @@ def result_page(id_attempt):
                 'earned_score': row[7],
                 'correct_answer': correct_answer,
                 'explanation': row[10],
+                'image_path': row[15],
             })
 
     return render_template('result.html', result=result, answers=answers)

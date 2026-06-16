@@ -3,6 +3,9 @@
 {% block content %}
 <h2>Вопрос #{{ q[0] }}</h2>
 <p><strong>Текст:</strong> {{ q[1] }}</p>
+{% if q[10] %}
+  <p><img class="question-image" src="{{ url_for('static', filename=q[10]) }}" alt="Фото к вопросу"></p>
+{% endif %}
 <p><strong>Тип:</strong> {{ q[7] }}</p>
 <p><strong>Категория:</strong> {{ q[8] }}</p>
 <p><strong>Сложность:</strong> {{ q[9] }}</p>

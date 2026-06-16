@@ -3,6 +3,9 @@
 {% block content %}
 <h2>Варианты ответа для вопроса #{{ question[0] }}</h2>
 <p>{{ question[1] }}</p>
+{% if question[10] %}
+  <p><img class="question-image" src="{{ url_for('static', filename=question[10]) }}" alt="Фото к вопросу"></p>
+{% endif %}
 
 <form method="post">
   <label>Текст варианта</label>

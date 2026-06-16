@@ -2,9 +2,12 @@
 {% block title %}Создание вопроса - Qwiz{% endblock %}
 {% block content %}
 <h2>Создание вопроса</h2>
-<form method="post" action="/author/questions/create">
+<form method="post" action="/author/questions/create" enctype="multipart/form-data">
   <label>Текст вопроса</label>
   <input type="text" name="question_text" required>
+
+  <label>Фото к вопросу</label>
+  <input type="file" name="question_image" accept="image/png,image/jpeg,image/gif,image/webp">
 
   <label>Категория</label>
   <select name="id_category" required>

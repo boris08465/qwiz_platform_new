@@ -870,7 +870,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         rc SYS_REFCURSOR;
     BEGIN
         OPEN rc FOR
-            SELECT q.id_question, q.question_text, qt.type_name, c.category_name, d.level_name, q.is_active
+            SELECT q.id_question, q.question_text, qt.type_name, c.category_name, d.level_name, q.is_active, q.image_path
             FROM question q
             JOIN question_type qt ON qt.type_id = q.type_id
             JOIN category c ON c.id_category = q.id_category
@@ -885,7 +885,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
     BEGIN
         OPEN rc FOR
             SELECT q.id_question, q.question_text, q.explanation, q.correct_text, q.correct_number, q.tolerance,
-                   q.is_active, qt.type_name, c.category_name, d.level_name
+                   q.is_active, qt.type_name, c.category_name, d.level_name, q.image_path
             FROM question q
             JOIN question_type qt ON qt.type_id = q.type_id
             JOIN category c ON c.id_category = q.id_category
@@ -958,7 +958,8 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         OPEN rc FOR
             SELECT qt.id_qt, qt.order_num, qt.weight, qt.time_limit,
                    q.id_question, q.question_text, q.type_id, q.explanation,
-                   qt_type.uses_options, qt_type.is_multi_select, qt_type.is_numeric_answer, qt_type.is_text_answer
+                   qt_type.uses_options, qt_type.is_multi_select, qt_type.is_numeric_answer, qt_type.is_text_answer,
+                   q.image_path
             FROM question_in_test qt
             JOIN question q ON q.id_question = qt.id_question
             JOIN question_type qt_type ON qt_type.type_id = q.type_id
@@ -1035,7 +1036,8 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         OPEN rc FOR
             SELECT qt.order_num, q.question_text, q.type_id, a.id_answer, a.answer_text, a.answer_number,
                    a.is_correct, a.earned_score, q.correct_text, q.correct_number, q.explanation,
-                   qt_type.uses_options, qt_type.is_multi_select, qt_type.is_numeric_answer, qt_type.is_text_answer
+                   qt_type.uses_options, qt_type.is_multi_select, qt_type.is_numeric_answer, qt_type.is_text_answer,
+                   q.image_path
             FROM question_in_test qt
             JOIN question q ON q.id_question = qt.id_question
             JOIN question_type qt_type ON qt_type.type_id = q.type_id
@@ -1117,7 +1119,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         rc SYS_REFCURSOR;
     BEGIN
         OPEN rc FOR
-            SELECT qt.id_qt, qt.order_num, qt.weight, qt.is_required, qt.time_limit, q.id_question, q.question_text
+            SELECT qt.id_qt, qt.order_num, qt.weight, qt.is_required, qt.time_limit, q.id_question, q.question_text, q.image_path
             FROM question_in_test qt
             JOIN question q ON q.id_question = qt.id_question
             WHERE qt.id_test = p_id_test
@@ -1129,7 +1131,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         rc SYS_REFCURSOR;
     BEGIN
         OPEN rc FOR
-            SELECT qt.order_num, q.id_question, q.question_text, qt.weight, qt.is_required, qt.time_limit
+            SELECT qt.order_num, q.id_question, q.question_text, qt.weight, qt.is_required, qt.time_limit, q.image_path
             FROM question_in_test qt
             JOIN question q ON q.id_question = qt.id_question
             WHERE qt.id_test = p_id_test
@@ -1141,7 +1143,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         rc SYS_REFCURSOR;
     BEGIN
         OPEN rc FOR
-            SELECT q.id_question, q.question_text
+            SELECT q.id_question, q.question_text, q.image_path
             FROM question q
             JOIN test t ON t.uid_author = q.uid_author
             WHERE t.id_test = p_id_test
@@ -1263,7 +1265,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         require_admin(p_uid_admin);
 
         OPEN rc FOR
-            SELECT q.id_question, q.question_text, u.user_name, qt.type_name, q.is_active, q.created_at
+            SELECT q.id_question, q.question_text, u.user_name, qt.type_name, q.is_active, q.created_at, q.image_path
             FROM question q
             JOIN users u ON u.user_id = q.uid_author
             JOIN question_type qt ON qt.type_id = q.type_id

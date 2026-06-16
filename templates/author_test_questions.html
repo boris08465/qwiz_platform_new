@@ -5,7 +5,7 @@
 <form method="post">
   <label>Вопрос</label>
   <select name="id_question" required>
-    {% for q in pool %}<option value="{{ q[0] }}">#{{ q[0] }} {{ q[1] }}</option>{% endfor %}
+    {% for q in pool %}<option value="{{ q[0] }}">#{{ q[0] }} {{ q[1] }}{% if q[2] %} [фото]{% endif %}</option>{% endfor %}
   </select>
 
   <label>Вес</label>
@@ -29,7 +29,7 @@
 <h3>Уже добавлено</h3>
 <ul>
   {% for s in selected %}
-    <li>Порядок {{ s[0] }} | #{{ s[1] }} {{ s[2] }} | Вес {{ s[3] }}</li>
+    <li>Порядок {{ s[0] }} | #{{ s[1] }} {{ s[2] }}{% if s[6] %} [фото]{% endif %} | Вес {{ s[3] }}</li>
   {% endfor %}
 </ul>
 {% endblock %}

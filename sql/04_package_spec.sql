@@ -65,4 +65,4 @@ CREATE OR REPLACE PACKAGE quiz_platform AS
     PROCEDURE show_user_attempts(p_uid NUMBER);
     PROCEDURE show_test_statistics(p_id_test NUMBER);
 END quiz_platform;
-/
+

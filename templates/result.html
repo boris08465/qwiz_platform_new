@@ -18,6 +18,9 @@
     {% for a in answers %}
       <li>
         {{ a.order_num }}. {{ a.question_text }}
+        {% if a.image_path %}
+          <br><img class="question-image" src="{{ url_for('static', filename=a.image_path) }}" alt="Фото к вопросу">
+        {% endif %}
         | Ваш ответ: {{ a.user_answer }}
         | Балл: {{ a.earned_score if a.earned_score is not none else 0 }}
         | Правильно: {{ 'Да' if a.is_correct == 1 else 'Нет' }}

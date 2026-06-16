@@ -6,7 +6,7 @@ BEGIN
         :NEW.id_role := seq_role.NEXTVAL;
     END IF;
 END;
-/
+
 
 CREATE OR REPLACE TRIGGER trg_users_bi
 BEFORE INSERT ON users
@@ -19,7 +19,7 @@ BEGIN
         :NEW.created_at := SYSDATE;
     END IF;
 END;
-/
+
 
 CREATE OR REPLACE TRIGGER trg_category_bi
 BEFORE INSERT ON category
@@ -29,7 +29,7 @@ BEGIN
         :NEW.id_category := seq_category.NEXTVAL;
     END IF;
 END;
-/
+
 
 CREATE OR REPLACE TRIGGER trg_difficulty_level_bi
 BEFORE INSERT ON difficulty_level
@@ -39,7 +39,7 @@ BEGIN
         :NEW.id_level := seq_difficulty_level.NEXTVAL;
     END IF;
 END;
-/
+
 
 CREATE OR REPLACE TRIGGER trg_question_type_bi
 BEFORE INSERT ON question_type
@@ -49,7 +49,7 @@ BEGIN
         :NEW.type_id := seq_question_type.NEXTVAL;
     END IF;
 END;
-/
+
 
 CREATE OR REPLACE TRIGGER trg_test_bi
 BEFORE INSERT ON test
@@ -62,7 +62,7 @@ BEGIN
         :NEW.created_at := SYSDATE;
     END IF;
 END;
-/
+
 
 CREATE OR REPLACE TRIGGER trg_question_bi
 BEFORE INSERT ON question
@@ -75,7 +75,7 @@ BEGIN
         :NEW.created_at := SYSDATE;
     END IF;
 END;
-/
+
 
 CREATE OR REPLACE TRIGGER trg_answer_option_bi
 BEFORE INSERT ON answer_option
@@ -85,7 +85,7 @@ BEGIN
         :NEW.id_option := seq_answer_option.NEXTVAL;
     END IF;
 END;
-/
+
 
 CREATE OR REPLACE TRIGGER trg_question_in_test_bi
 BEFORE INSERT ON question_in_test
@@ -95,7 +95,7 @@ BEGIN
         :NEW.id_qt := seq_question_in_test.NEXTVAL;
     END IF;
 END;
-/
+
 
 CREATE OR REPLACE TRIGGER trg_test_access_bi
 BEFORE INSERT ON test_access
@@ -108,7 +108,7 @@ BEGIN
         :NEW.granted_at := SYSDATE;
     END IF;
 END;
-/
+
 
 CREATE OR REPLACE TRIGGER trg_attempt_bi
 BEFORE INSERT ON attempt
@@ -121,7 +121,7 @@ BEGIN
         :NEW.start_date := SYSDATE;
     END IF;
 END;
-/
+
 
 CREATE OR REPLACE TRIGGER trg_answer_bi
 BEFORE INSERT ON answer
@@ -134,7 +134,7 @@ BEGIN
         :NEW.answer_date := SYSDATE;
     END IF;
 END;
-/
+
 
 CREATE OR REPLACE TRIGGER trg_answer_selected_option_bi
 BEFORE INSERT ON answer_selected_option
@@ -144,5 +144,5 @@ BEGIN
         :NEW.id_selected := seq_answer_selected_option.NEXTVAL;
     END IF;
 END;
-/
+
 
