@@ -27,11 +27,11 @@ CREATE OR REPLACE PACKAGE quiz_platform AS
     PROCEDURE start_attempt(p_id_test NUMBER, p_uid NUMBER);
     FUNCTION start_attempt_id(p_id_test NUMBER, p_uid NUMBER) RETURN NUMBER;
     PROCEDURE save_answer(p_id_attempt NUMBER, p_id_qt NUMBER, p_answer_text VARCHAR2, p_answer_number NUMBER, p_answer_time NUMBER);
-    FUNCTION save_answer_id(p_id_attempt NUMBER, p_id_qt NUMBER, p_answer_text VARCHAR2, p_answer_number NUMBER, p_answer_time NUMBER) RETURN NUMBER;
+    FUNCTION save_answer_id(p_id_attempt NUMBER, p_id_qt NUMBER, p_answer_text VARCHAR2, p_answer_number NUMBER, p_answer_time NUMBER, p_uid NUMBER) RETURN NUMBER;
     PROCEDURE save_selected_option(p_id_answer NUMBER, p_id_option NUMBER);
     FUNCTION check_answer(p_id_answer NUMBER) RETURN NUMBER;
     FUNCTION calc_answer_score(p_id_answer NUMBER) RETURN NUMBER;
-    PROCEDURE finish_attempt(p_id_attempt NUMBER);
+    PROCEDURE finish_attempt(p_id_attempt NUMBER, p_uid NUMBER);
     PROCEDURE calc_result(p_id_attempt NUMBER);
     FUNCTION list_author_questions(p_uid_author NUMBER) RETURN SYS_REFCURSOR;
     FUNCTION get_author_question(p_id_question NUMBER, p_uid_author NUMBER) RETURN SYS_REFCURSOR;
