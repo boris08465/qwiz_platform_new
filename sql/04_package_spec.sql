@@ -26,7 +26,7 @@ CREATE OR REPLACE PACKAGE quiz_platform AS
     FUNCTION check_access(p_id_test NUMBER, p_uid NUMBER) RETURN NUMBER;
     PROCEDURE start_attempt(p_id_test NUMBER, p_uid NUMBER);
     FUNCTION start_attempt_id(p_id_test NUMBER, p_uid NUMBER) RETURN NUMBER;
-    PROCEDURE save_answer(p_id_attempt NUMBER, p_id_qt NUMBER, p_answer_text VARCHAR2, p_answer_number NUMBER, p_answer_time NUMBER);
+    PROCEDURE save_answer(p_id_attempt NUMBER, p_id_qt NUMBER, p_answer_text VARCHAR2, p_answer_number NUMBER, p_answer_time NUMBER, p_uid NUMBER);
     FUNCTION save_answer_id(p_id_attempt NUMBER, p_id_qt NUMBER, p_answer_text VARCHAR2, p_answer_number NUMBER, p_answer_time NUMBER, p_uid NUMBER) RETURN NUMBER;
     PROCEDURE save_selected_option(p_id_answer NUMBER, p_id_option NUMBER);
     FUNCTION check_answer(p_id_answer NUMBER) RETURN NUMBER;

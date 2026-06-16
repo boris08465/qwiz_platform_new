@@ -524,11 +524,12 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         p_id_qt NUMBER,
         p_answer_text VARCHAR2,
         p_answer_number NUMBER,
-        p_answer_time NUMBER
+        p_answer_time NUMBER,
+        p_uid NUMBER
     ) IS
         v_answer_id answer.id_answer%TYPE;
     BEGIN
-        v_answer_id := save_answer_id(p_id_attempt, p_id_qt, p_answer_text, p_answer_number, p_answer_time);
+        v_answer_id := save_answer_id(p_id_attempt, p_id_qt, p_answer_text, p_answer_number, p_answer_time, p_uid);
     END;
 
     FUNCTION save_answer_id(
@@ -536,10 +537,11 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         p_id_qt NUMBER,
         p_answer_text VARCHAR2,
         p_answer_number NUMBER,
-        p_answer_time NUMBER
+        p_answer_time NUMBER,
+        p_uid NUMBER
     ) RETURN NUMBER IS
         v_status attempt.status%TYPE;
-        v_uid attempt.user_id%TYPE;
+        v_attempt_uid attempt.user_id%TYPE;
         v_test_id attempt.id_test%TYPE;
         v_started DATE;
         v_test_time_limit NUMBER;
@@ -547,10 +549,14 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         v_qt_cnt NUMBER;
     BEGIN
         SELECT a.status, a.user_id, a.id_test, a.start_date, t.time_limit
-        INTO v_status, v_uid, v_test_id, v_started, v_test_time_limit
+        INTO v_status, v_attempt_uid, v_test_id, v_started, v_test_time_limit
         FROM attempt a
         JOIN test t ON t.id_test = a.id_test
         WHERE a.id_attempt = p_id_attempt;
+
+        IF v_attempt_uid <> p_uid THEN
+            RAISE_APPLICATION_ERROR(-20313, 'Попытка не принадлежит пользователю');
+        END IF;
 
         IF v_status <> 'STARTED' THEN
             RAISE_APPLICATION_ERROR(-20305, 'Попытка завершена');
@@ -787,18 +793,23 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         WHERE id_attempt = p_id_attempt;
     END;
 
-    PROCEDURE finish_attempt(p_id_attempt NUMBER) IS
+    PROCEDURE finish_attempt(p_id_attempt NUMBER, p_uid NUMBER) IS
         v_status attempt.status%TYPE;
+        v_attempt_uid attempt.user_id%TYPE;
         v_started DATE;
         v_time_limit NUMBER;
         v_new_status VARCHAR2(30);
         v_finished_in_time NUMBER := 1;
     BEGIN
-        SELECT a.status, a.start_date, t.time_limit
-        INTO v_status, v_started, v_time_limit
+        SELECT a.status, a.user_id, a.start_date, t.time_limit
+        INTO v_status, v_attempt_uid, v_started, v_time_limit
         FROM attempt a
         JOIN test t ON t.id_test = a.id_test
         WHERE a.id_attempt = p_id_attempt;
+
+        IF v_attempt_uid <> p_uid THEN
+            RAISE_APPLICATION_ERROR(-20313, 'Попытка не принадлежит пользователю');
+        END IF;
 
         IF v_status <> 'STARTED' THEN
             RAISE_APPLICATION_ERROR(-20311, 'Попытка уже завершена');
