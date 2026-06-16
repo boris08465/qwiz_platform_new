@@ -171,8 +171,8 @@ BEGIN
     quiz_platform.include_question_in_test(v_author_id, v_test_id, v_q_true_false_id, 1, 5, 1, NULL);
     quiz_platform.include_question_in_test(v_author_id, v_test_id, v_q_short_id, 1, 6, 1, NULL);
 
-    quiz_platform.publish_test(v_test_id);
-    quiz_platform.grant_test_access(v_test_id, v_student_id);
+    quiz_platform.publish_test(v_author_id, v_test_id);
+    quiz_platform.grant_test_access(v_author_id, v_test_id, v_student_id);
 
     COMMIT;
 

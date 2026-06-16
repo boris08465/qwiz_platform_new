@@ -37,6 +37,35 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         END IF;
     END;
 
+    FUNCTION check_author_role(p_uid NUMBER) RETURN NUMBER IS
+        v_cnt NUMBER;
+    BEGIN
+        SELECT COUNT(*)
+        INTO v_cnt
+        FROM users u
+        JOIN role r ON r.id_role = u.id_role
+        WHERE u.user_id = p_uid
+          AND u.is_active = 1
+          AND r.role_name IN ('AUTHOR', 'ADMIN');
+
+        IF v_cnt > 0 THEN
+            RETURN 1;
+        END IF;
+        RETURN 0;
+    END;
+
+    FUNCTION check_admin_role(p_uid NUMBER) RETURN NUMBER IS
+    BEGIN
+        RETURN has_role(p_uid, 'ADMIN');
+    END;
+
+    PROCEDURE require_admin(p_uid NUMBER) IS
+    BEGIN
+        IF check_admin_role(p_uid) <> 1 THEN
+            RAISE_APPLICATION_ERROR(-20031, 'Доступ разрешен только администратору');
+        END IF;
+    END;
+
     FUNCTION is_terminal_attempt_status(p_status VARCHAR2) RETURN NUMBER IS
         v_terminal NUMBER;
     BEGIN
@@ -163,11 +192,17 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         RETURN v_test_id;
     END;
 
-    PROCEDURE publish_test(p_id_test NUMBER, p_direct_call NUMBER DEFAULT 1) IS
+    PROCEDURE publish_test(p_uid_author NUMBER, p_id_test NUMBER, p_direct_call NUMBER DEFAULT 1) IS
         v_active NUMBER;
         v_q_count NUMBER;
     BEGIN
-        SELECT is_active INTO v_active FROM test WHERE id_test = p_id_test;
+        require_author(p_uid_author);
+
+        SELECT is_active
+        INTO v_active
+        FROM test
+        WHERE id_test = p_id_test
+          AND uid_author = p_uid_author;
         SELECT COUNT(*) INTO v_q_count FROM question_in_test WHERE id_test = p_id_test;
 
         IF v_active = 0 THEN
@@ -230,17 +265,20 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
             RAISE_APPLICATION_ERROR(-20109, 'Вопрос уже добавлен или занят порядок вопроса');
     END;
 
-    PROCEDURE generate_test_questions(p_id_test NUMBER) IS
+    PROCEDURE generate_test_questions(p_uid_author NUMBER, p_id_test NUMBER) IS
         v_id_level test.id_level%TYPE;
         v_question_count test.question_count%TYPE;
         v_id_category test.id_category%TYPE;
         v_exists NUMBER;
         v_order NUMBER := 1;
     BEGIN
+        require_author(p_uid_author);
+
         SELECT id_level, question_count, id_category
         INTO v_id_level, v_question_count, v_id_category
         FROM test
-        WHERE id_test = p_id_test;
+        WHERE id_test = p_id_test
+          AND uid_author = p_uid_author;
 
         IF v_id_level IS NULL OR v_question_count IS NULL OR v_question_count <= 0 THEN
             RAISE_APPLICATION_ERROR(-20110, 'Для автогенерации заполните сложность и количество вопросов');
@@ -360,16 +398,22 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         END IF;
     END;
 
-    PROCEDURE grant_test_access(p_id_test NUMBER, p_uid NUMBER) IS
+    PROCEDURE grant_test_access(p_uid_author NUMBER, p_id_test NUMBER, p_uid NUMBER) IS
         v_user_cnt NUMBER;
         v_test_cnt NUMBER;
     BEGIN
+        require_author(p_uid_author);
+
         SELECT COUNT(*) INTO v_user_cnt FROM users WHERE user_id = p_uid AND is_active = 1;
         IF v_user_cnt = 0 THEN
             RAISE_APPLICATION_ERROR(-20200, 'Пользователь не найден или неактивен');
         END IF;
 
-        SELECT COUNT(*) INTO v_test_cnt FROM test WHERE id_test = p_id_test;
+        SELECT COUNT(*)
+        INTO v_test_cnt
+        FROM test
+        WHERE id_test = p_id_test
+          AND uid_author = p_uid_author;
         IF v_test_cnt = 0 THEN
             RAISE_APPLICATION_ERROR(-20201, 'Тест не найден');
         END IF;
@@ -500,6 +544,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         v_started DATE;
         v_test_time_limit NUMBER;
         v_answer_id answer.id_answer%TYPE;
+        v_qt_cnt NUMBER;
     BEGIN
         SELECT a.status, a.user_id, a.id_test, a.start_date, t.time_limit
         INTO v_status, v_uid, v_test_id, v_started, v_test_time_limit
@@ -509,6 +554,16 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
 
         IF v_status <> 'STARTED' THEN
             RAISE_APPLICATION_ERROR(-20305, 'Попытка завершена');
+        END IF;
+
+        SELECT COUNT(*)
+        INTO v_qt_cnt
+        FROM question_in_test
+        WHERE id_qt = p_id_qt
+          AND id_test = v_test_id;
+
+        IF v_qt_cnt = 0 THEN
+            RAISE_APPLICATION_ERROR(-20312, 'Вопрос не относится к данной попытке');
         END IF;
 
         IF v_test_time_limit IS NOT NULL
@@ -953,7 +1008,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
                              SELECT 1
                              FROM attempt_status s
                              WHERE s.status_code = x.status
-                               AND s.is_terminal = 1
+                               AND s.is_successful = 1
                          )
                          AND x.percent_result IS NOT NULL
                    ), 0) AS avg_percent
@@ -1117,11 +1172,11 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
             SELECT
                 t.test_name,
                 COUNT(a.id_attempt) AS total_attempts,
-                SUM(CASE WHEN s.is_terminal = 1 THEN 1 ELSE 0 END) AS finished_attempts,
-                ROUND(AVG(a.score), 2) AS avg_score,
-                ROUND(AVG(a.percent_result), 2) AS avg_percent,
-                MIN(a.percent_result) AS min_percent,
-                MAX(a.percent_result) AS max_percent
+                SUM(CASE WHEN s.is_successful = 1 THEN 1 ELSE 0 END) AS finished_attempts,
+                ROUND(AVG(CASE WHEN s.is_successful = 1 THEN a.score END), 2) AS avg_score,
+                ROUND(AVG(CASE WHEN s.is_successful = 1 THEN a.percent_result END), 2) AS avg_percent,
+                MIN(CASE WHEN s.is_successful = 1 THEN a.percent_result END) AS min_percent,
+                MAX(CASE WHEN s.is_successful = 1 THEN a.percent_result END) AS max_percent
             FROM test t
             LEFT JOIN attempt a ON a.id_test = t.id_test
             LEFT JOIN attempt_status s ON s.status_code = a.status
@@ -1151,6 +1206,13 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
             JOIN question_in_test qt ON qt.id_test = t.id_test
             JOIN question q ON q.id_question = qt.id_question
             LEFT JOIN answer a ON a.id_qt = qt.id_qt
+                AND EXISTS (
+                    SELECT 1
+                    FROM attempt at
+                    JOIN attempt_status s ON s.status_code = at.status
+                    WHERE at.id_attempt = a.id_attempt
+                      AND s.is_successful = 1
+                )
             WHERE t.id_test = p_id_test
               AND t.uid_author = p_uid_author
             GROUP BY qt.order_num, q.question_text
@@ -1158,9 +1220,11 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         RETURN rc;
     END;
 
-    FUNCTION list_admin_users RETURN SYS_REFCURSOR IS
+    FUNCTION list_admin_users(p_uid_admin NUMBER) RETURN SYS_REFCURSOR IS
         rc SYS_REFCURSOR;
     BEGIN
+        require_admin(p_uid_admin);
+
         OPEN rc FOR
             SELECT u.user_id, u.user_name, r.role_name, u.is_active, u.created_at
             FROM users u
@@ -1169,9 +1233,11 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         RETURN rc;
     END;
 
-    FUNCTION list_admin_tests RETURN SYS_REFCURSOR IS
+    FUNCTION list_admin_tests(p_uid_admin NUMBER) RETURN SYS_REFCURSOR IS
         rc SYS_REFCURSOR;
     BEGIN
+        require_admin(p_uid_admin);
+
         OPEN rc FOR
             SELECT t.id_test, t.test_name, u.user_name, t.is_active, t.created_at, t.attempt_limit, t.question_count
             FROM test t
@@ -1180,9 +1246,11 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         RETURN rc;
     END;
 
-    FUNCTION list_admin_questions RETURN SYS_REFCURSOR IS
+    FUNCTION list_admin_questions(p_uid_admin NUMBER) RETURN SYS_REFCURSOR IS
         rc SYS_REFCURSOR;
     BEGIN
+        require_admin(p_uid_admin);
+
         OPEN rc FOR
             SELECT q.id_question, q.question_text, u.user_name, qt.type_name, q.is_active, q.created_at
             FROM question q
@@ -1192,9 +1260,11 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         RETURN rc;
     END;
 
-    FUNCTION get_admin_statistics RETURN SYS_REFCURSOR IS
+    FUNCTION get_admin_statistics(p_uid_admin NUMBER) RETURN SYS_REFCURSOR IS
         rc SYS_REFCURSOR;
     BEGIN
+        require_admin(p_uid_admin);
+
         OPEN rc FOR
             SELECT
                 (SELECT COUNT(*) FROM users) AS users_total,
@@ -1229,7 +1299,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
               SELECT 1
               FROM attempt_status s
               WHERE s.status_code = x.status
-                AND s.is_terminal = 1
+                AND s.is_successful = 1
           )
           AND x.percent_result IS NOT NULL;
 
@@ -1283,11 +1353,11 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
 
         SELECT
             COUNT(*),
-            SUM(CASE WHEN s.is_terminal = 1 THEN 1 ELSE 0 END),
-            ROUND(AVG(score), 2),
-            ROUND(AVG(percent_result), 2),
-            MIN(percent_result),
-            MAX(percent_result)
+            SUM(CASE WHEN s.is_successful = 1 THEN 1 ELSE 0 END),
+            ROUND(AVG(CASE WHEN s.is_successful = 1 THEN score END), 2),
+            ROUND(AVG(CASE WHEN s.is_successful = 1 THEN percent_result END), 2),
+            MIN(CASE WHEN s.is_successful = 1 THEN percent_result END),
+            MAX(CASE WHEN s.is_successful = 1 THEN percent_result END)
         INTO
             v_total_attempts,
             v_finished_attempts,
@@ -1323,6 +1393,13 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
             FROM question_in_test qt
             JOIN question q ON q.id_question = qt.id_question
             LEFT JOIN answer a ON a.id_qt = qt.id_qt
+                AND EXISTS (
+                    SELECT 1
+                    FROM attempt at
+                    JOIN attempt_status s ON s.status_code = at.status
+                    WHERE at.id_attempt = a.id_attempt
+                      AND s.is_successful = 1
+                )
             WHERE qt.id_test = p_id_test
             GROUP BY qt.order_num, q.question_text
             ORDER BY qt.order_num

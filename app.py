@@ -41,7 +41,14 @@ def require_author_role():
     auth = require_auth()
     if auth:
         return auth
-    if session.get('role_code') not in ('AUTHOR', 'ADMIN'):
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                has_access = int(cur.callfunc('quiz_platform.check_author_role', int, [session['user_id']]))
+    except oracledb.DatabaseError as exc:
+        flash(f'Ошибка проверки доступа: {exc.args[0].message}', 'error')
+        return redirect(url_for('dashboard_page'))
+    if has_access != 1:
         flash('Доступ только для автора или администратора.', 'error')
         return redirect(url_for('dashboard_page'))
     return None
@@ -51,7 +58,14 @@ def require_admin_role():
     auth = require_auth()
     if auth:
         return auth
-    if session.get('role_code') != 'ADMIN':
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                has_access = int(cur.callfunc('quiz_platform.check_admin_role', int, [session['user_id']]))
+    except oracledb.DatabaseError as exc:
+        flash(f'Ошибка проверки доступа: {exc.args[0].message}', 'error')
+        return redirect(url_for('dashboard_page'))
+    if has_access != 1:
         flash('Доступ только для администратора.', 'error')
         return redirect(url_for('dashboard_page'))
     return None
@@ -681,7 +695,7 @@ def author_test_generate_page(id_test):
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.callproc('quiz_platform.generate_test_questions', [id_test])
+                cur.callproc('quiz_platform.generate_test_questions', [session['user_id'], id_test])
             conn.commit()
         flash('Тест автоматически сформирован.', 'success')
     except oracledb.DatabaseError as exc:
@@ -697,7 +711,7 @@ def author_test_publish_page(id_test):
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.callproc('quiz_platform.publish_test', [id_test, 1])
+                cur.callproc('quiz_platform.publish_test', [session['user_id'], id_test, 1])
             conn.commit()
         flash('Статус публикации теста изменен.', 'success')
     except oracledb.DatabaseError as exc:
@@ -730,7 +744,7 @@ def test_access_grant_page(id_test):
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.callproc('quiz_platform.grant_test_access', [id_test, int(uid_raw)])
+                cur.callproc('quiz_platform.grant_test_access', [session['user_id'], id_test, int(uid_raw)])
             conn.commit()
         flash('Доступ выдан.', 'success')
     except oracledb.DatabaseError as exc:
@@ -775,7 +789,7 @@ def admin_users_page():
     access = require_admin_role()
     if access:
         return access
-    users = fetch_cursor('quiz_platform.list_admin_users')
+    users = fetch_cursor('quiz_platform.list_admin_users', [session['user_id']])
     return render_template('admin_users.html', users=users)
 
 
@@ -784,7 +798,7 @@ def admin_tests_page():
     access = require_admin_role()
     if access:
         return access
-    tests = fetch_cursor('quiz_platform.list_admin_tests')
+    tests = fetch_cursor('quiz_platform.list_admin_tests', [session['user_id']])
     return render_template('admin_tests.html', tests=tests)
 
 
@@ -793,7 +807,7 @@ def admin_questions_page():
     access = require_admin_role()
     if access:
         return access
-    questions = fetch_cursor('quiz_platform.list_admin_questions')
+    questions = fetch_cursor('quiz_platform.list_admin_questions', [session['user_id']])
     return render_template('admin_questions.html', questions=questions)
 
 
@@ -811,7 +825,7 @@ def admin_statistics_page():
     access = require_admin_role()
     if access:
         return access
-    stats = fetch_cursor('quiz_platform.get_admin_statistics')[0]
+    stats = fetch_cursor('quiz_platform.get_admin_statistics', [session['user_id']])[0]
     overview = {
         'users_total': stats[0],
         'users_active': stats[1],
