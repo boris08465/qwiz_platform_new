@@ -3,37 +3,37 @@
 {% block content %}
 <h2>Создание теста</h2>
 <form method="post">
-  <label>Название теста</label>
-  <input type="text" name="test_name" required>
+  <label for="test-name">Название теста</label>
+  <input id="test-name" type="text" name="test_name" maxlength="100" value="{{ request.form.get('test_name', '') }}" required>
 
-  <label>Описание</label>
-  <input type="text" name="test_description">
+  <label for="test-description">Описание</label>
+  <input id="test-description" type="text" name="test_description" maxlength="500" value="{{ request.form.get('test_description', '') }}">
 
-  <label>Категория</label>
-  <select name="id_category">
+  <label for="category">Категория</label>
+  <select id="category" name="id_category">
     <option value="">Без категории</option>
-    {% for c in categories %}<option value="{{ c[0] }}">{{ c[1] }}</option>{% endfor %}
+    {% for c in categories %}<option value="{{ c[0] }}" {% if request.form.get('id_category') == c[0]|string %}selected{% endif %}>{{ c[1] }}</option>{% endfor %}
   </select>
 
-  <label>Сложность</label>
-  <select name="id_level">
+  <label for="level">Сложность</label>
+  <select id="level" name="id_level">
     <option value="">Не указана</option>
-    {% for l in levels %}<option value="{{ l[0] }}">{{ l[1] }}</option>{% endfor %}
+    {% for l in levels %}<option value="{{ l[0] }}" {% if request.form.get('id_level') == l[0]|string %}selected{% endif %}>{{ l[1] }}</option>{% endfor %}
   </select>
 
-  <label>Лимит времени, сек</label>
-  <input type="number" name="time_limit" min="1">
+  <label for="time-limit">Лимит времени, сек</label>
+  <input id="time-limit" type="number" name="time_limit" min="1" value="{{ request.form.get('time_limit', '') }}">
 
-  <label>Лимит попыток</label>
-  <input type="number" name="attempt_limit" min="1" value="1" required>
+  <label for="attempt-limit">Лимит попыток</label>
+  <input id="attempt-limit" type="number" name="attempt_limit" min="1" value="{{ request.form.get('attempt_limit', '1') }}" required>
 
-  <label>Плановое количество вопросов (для автогенерации)</label>
-  <input type="number" name="question_count" min="1">
+  <label for="question-count">Плановое количество вопросов (для автогенерации)</label>
+  <input id="question-count" type="number" name="question_count" min="1" value="{{ request.form.get('question_count', '') }}">
 
-  <label>Показывать обратную связь</label>
-  <select name="show_feedback" required>
-    <option value="1">Да</option>
-    <option value="0">Нет</option>
+  <label for="show-feedback">Показывать обратную связь</label>
+  <select id="show-feedback" name="show_feedback" required>
+    <option value="1" {% if request.form.get('show_feedback', '1') == '1' %}selected{% endif %}>Да</option>
+    <option value="0" {% if request.form.get('show_feedback') == '0' %}selected{% endif %}>Нет</option>
   </select>
 
   <button type="submit">Создать тест</button>

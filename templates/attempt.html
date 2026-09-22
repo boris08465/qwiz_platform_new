@@ -1,125 +1,98 @@
 {% extends 'base.html' %}
-{% block title %}Прохождение теста - Qwiz{% endblock %}
+{% block title %}Прохождение теста — Qwiz{% endblock %}
 {% block content %}
-<h2>Прохождение: {{ attempt[5] }}</h2>
-<p><strong>Попытка:</strong> #{{ attempt[0] }} | <strong>Статус:</strong> {{ attempt[1] }}</p>
-<p><strong>Прогресс:</strong> {{ answered_count }} / {{ total_questions }}</p>
-
-{% if attempt[1] == 'STARTED' %}
-  {% if attempt[6] %}
-    <p>
-      <strong>Осталось времени:</strong>
-      <span id="test-timer" data-remaining-seconds="{{ attempt[8] }}">{{ attempt[8] }}</span>
-    </p>
-  {% endif %}
-  {% if not current_question %}
-    <p>Все вопросы отвечены.</p>
-    <form id="finish-attempt-form" method="post" action="/attempts/{{ attempt[0] }}/finish">
-      <button type="submit">Завершить попытку</button>
+<h2>{{ attempt[5] }}</h2>
+{% if session.get('role_code') == 'ADMIN' and attempt[9] != session.get('user_id') %}
+<p class="flash flash-error">Режим администратора. Это попытка пользователя {{ attempt[10] }} (UID {{ attempt[9] }}). Ваши ответы и завершение изменят его результат.</p>
+<p><a href="/admin/attempts">Ко всем попыткам</a></p>
+{% endif %}
+<p>Попытка #{{ attempt[0] }} · {{ status_titles.get(attempt[1], attempt[1]) }}</p>
+<p>Пройдено вопросов: {{ answered_count }} / {{ total_questions }}</p>
+<progress value="{{ answered_count }}" max="{{ total_questions or 1 }}" aria-label="Прогресс теста"></progress>
+{% if attempt[6] %}
+  <p><strong>До конца теста:</strong> <span id="test-timer" data-seconds="{{ attempt[8] }}">{{ attempt[8] }} сек</span></p>
+{% endif %}
+{% if current_question %}
+  {% set q = current_question %}
+  <section class="question-card">
+    <h3>Вопрос {{ q[1] }}</h3>
+    <p>{{ q[5] }}</p>
+    {% if q[12] %}<img class="question-image" src="{{ url_for('static', filename=q[12]) }}" alt="Иллюстрация к вопросу">{% endif %}
+    <p class="hint">Баллов: {{ q[2] }} · {{ 'Обязательный' if q[13] == 1 else 'Можно пропустить' }}</p>
+    {% if question_remaining is not none %}
+      <p><strong>На вопрос осталось:</strong> <span id="question-timer" data-seconds="{{ question_remaining }}">{{ question_remaining }} сек</span></p>
+    {% endif %}
+    <form id="answer-form" method="post" action="{{ url_for('save_attempt_answer_page', id_attempt=attempt[0]) }}">
+      <input type="hidden" name="id_qt" value="{{ q[0] }}">
+      {% if q[8] == 1 %}
+        <fieldset>
+          <legend>{{ 'Выберите один или несколько ответов' if q[9] == 1 else 'Выберите один ответ' }}</legend>
+          {% for opt in option_map.get(q[4], []) %}
+            <label class="option-row"><input type="{{ 'checkbox' if q[9] == 1 else 'radio' }}" name="selected_option_ids" value="{{ opt.id_option }}" {% if q[9] != 1 %}required{% endif %}> {{ opt.option_text }}</label>
+          {% else %}<p>Для вопроса не заданы варианты. Сообщите автору теста.</p>{% endfor %}
+        </fieldset>
+      {% elif q[10] == 1 %}
+        <label for="answer-number">Числовой ответ</label>
+        <input id="answer-number" type="number" step="any" name="answer_number" required autofocus>
+      {% else %}
+        <label for="answer-text">Текстовый ответ</label>
+        <input id="answer-text" type="text" name="answer_text" maxlength="500" required autofocus>
+      {% endif %}
+      <p id="answer-error" class="field-error" role="alert" hidden>Выберите хотя бы один вариант ответа.</p>
+      <button type="submit">Сохранить ответ и продолжить</button>
+      {% if q[13] == 0 %}<button class="secondary" type="submit" name="skip" value="1" formnovalidate>Пропустить вопрос</button>{% endif %}
     </form>
-  {% else %}
-    <form id="finish-attempt-form" method="post" action="/attempts/{{ attempt[0] }}/finish" style="display:none;"></form>
-  {% endif %}
+  </section>
 {% else %}
-  <p><a href="/attempts/{{ attempt[0] }}/result">Смотреть результат</a></p>
+  <p>Все вопросы пройдены. Завершите попытку, чтобы увидеть результат.</p>
 {% endif %}
-
-{% if attempt[1] == 'STARTED' and current_question %}
-  {% set visible_questions = [current_question] %}
-{% elif attempt[1] == 'STARTED' %}
-  {% set visible_questions = [] %}
-{% else %}
-  {% set visible_questions = questions %}
-{% endif %}
-
-{% if visible_questions %}
-  <h3>{% if attempt[1] == 'STARTED' %}Текущий вопрос{% else %}Вопросы{% endif %}</h3>
-  {% for q in visible_questions %}
-    <div style="padding:10px; border:1px solid #ddd; margin-bottom:10px;">
-      <p><strong>{{ q[1] }}.</strong> {{ q[5] }}</p>
-      {% if q[12] %}
-        <p><img class="question-image" src="{{ url_for('static', filename=q[12]) }}" alt="Фото к вопросу"></p>
-      {% endif %}
-      <p>Вес: {{ q[2] }}{% if q[3] %} | Лимит на вопрос: {{ q[3] }} сек{% endif %}</p>
-
-      {% set a = answer_map.get(q[0]) %}
-      {% if a and attempt[1] != 'STARTED' %}
-        {% if q[8] == 1 %}
-          {% set saved_answer = a.selected_options | map(attribute='option_text') | join(', ') %}
-        {% elif q[10] == 1 %}
-          {% set saved_answer = a.answer_number if a.answer_number is not none else '-' %}
-        {% else %}
-          {% set saved_answer = a.answer_text if a.answer_text else '-' %}
-        {% endif %}
-        <p><strong>Ответ сохранен.</strong> Балл: {{ a.earned_score if a.earned_score is not none else '-' }}</p>
-        <p><strong>Ваш ответ:</strong> {{ saved_answer if saved_answer else '-' }}</p>
-      {% elif attempt[1] == 'STARTED' %}
-        <form class="answer-form" method="post" action="/attempts/{{ attempt[0] }}/answer">
-          <input type="hidden" name="id_qt" value="{{ q[0] }}">
-          <input type="hidden" name="answer_time" value="0">
-
-          {% if q[8] == 1 %}
-            {% for opt in option_map.get(q[4], []) %}
-              <label style="display:block;">
-                <input type="{% if q[9] == 1 %}checkbox{% else %}radio{% endif %}" name="selected_option_ids" value="{{ opt.id_option }}">
-                {{ opt.option_text }}
-              </label>
-            {% endfor %}
-          {% endif %}
-
-          {% if q[11] == 1 %}
-            <label>Текстовый ответ</label>
-            <input type="text" name="answer_text">
-          {% endif %}
-
-          {% if q[10] == 1 %}
-            <label>Числовой ответ</label>
-            <input type="number" step="any" name="answer_number">
-          {% endif %}
-
-          <button type="submit">Сохранить ответ</button>
-        </form>
-      {% endif %}
-    </div>
-  {% endfor %}
-{% endif %}
-
+<form id="finish-attempt-form" method="post" action="{{ url_for('finish_attempt_page', id_attempt=attempt[0]) }}">
+  <button type="submit" {% if missing_required %}disabled{% endif %}>Завершить попытку</button>
+</form>
+{% if missing_required %}<p class="hint">Осталось обязательных вопросов: {{ missing_required }}.</p>{% endif %}
+<p><a href="/my-attempts">Вернуться к списку попыток</a> — таймер продолжит идти.</p>
 <script>
-  (function () {
-    var timer = document.getElementById('test-timer');
-    var finishForm = document.getElementById('finish-attempt-form');
-    var startedAt = Date.now();
-
-    function formatSeconds(totalSeconds) {
-      var seconds = Math.max(0, Number(totalSeconds) || 0);
-      var minutes = Math.floor(seconds / 60);
-      var rest = seconds % 60;
-      return String(minutes).padStart(2, '0') + ':' + String(rest).padStart(2, '0');
-    }
-
-    if (timer && finishForm) {
-      var remaining = parseInt(timer.dataset.remainingSeconds || '0', 10);
-      timer.textContent = formatSeconds(remaining);
-
-      var intervalId = window.setInterval(function () {
-        remaining -= 1;
-        timer.textContent = formatSeconds(remaining);
-
-        if (remaining <= 0) {
-          window.clearInterval(intervalId);
+(() => {
+  const answerForm = document.getElementById('answer-form');
+  const finishForm = document.getElementById('finish-attempt-form');
+  let submitting = false;
+  const clocks = ['test', 'question'].map(kind => {
+    const element = document.getElementById(kind + '-timer');
+    return element ? {kind, element, deadline: Date.now() + Number(element.dataset.seconds) * 1000} : null;
+  }).filter(Boolean);
+  function tick() {
+    if (submitting) return;
+    for (const clock of clocks) {
+      const seconds = Math.max(0, Math.ceil((clock.deadline - Date.now()) / 1000));
+      clock.element.textContent = String(Math.floor(seconds / 60)).padStart(2, '0') + ':' + String(seconds % 60).padStart(2, '0');
+      if (seconds === 0) {
+        submitting = true;
+        if (clock.kind === 'test') {
           finishForm.submit();
+        } else if (answerForm) {
+          const flag = document.createElement('input');
+          flag.type = 'hidden'; flag.name = 'timeout'; flag.value = '1';
+          answerForm.appendChild(flag);
+          answerForm.submit();
         }
-      }, 1000);
+        return;
+      }
     }
-
-    document.querySelectorAll('.answer-form').forEach(function (form) {
-      form.addEventListener('submit', function () {
-        var answerTimeInput = form.querySelector('input[name="answer_time"]');
-        if (answerTimeInput) {
-          answerTimeInput.value = String(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
-        }
-      });
-    });
-  })();
+  }
+  document.querySelectorAll('form').forEach(form => form.addEventListener('submit', event => {
+    if (submitting) { event.preventDefault(); return; }
+    if (form === answerForm && event.submitter?.name !== 'skip') {
+      const options = form.querySelectorAll('[name="selected_option_ids"]');
+      if (options.length && !form.querySelector('[name="selected_option_ids"]:checked')) {
+        event.preventDefault(); document.getElementById('answer-error').hidden = false; return;
+      }
+    }
+    submitting = true;
+  }));
+  window.addEventListener('pageshow', () => { submitting = false; tick(); });
+  document.addEventListener('visibilitychange', tick);
+  tick();
+  window.setInterval(tick, 250);
+})();
 </script>
 {% endblock %}

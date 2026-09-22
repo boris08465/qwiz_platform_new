@@ -66,6 +66,86 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         END IF;
     END;
 
+    PROCEDURE require_editable_test(p_uid NUMBER, p_id_test NUMBER) IS
+        v_active NUMBER;
+        v_count NUMBER;
+    BEGIN
+        require_author(p_uid);
+        SELECT is_active INTO v_active FROM test
+        WHERE id_test = p_id_test AND (uid_author = p_uid OR check_admin_role(p_uid) = 1) FOR UPDATE;
+        SELECT COUNT(*) INTO v_count FROM attempt WHERE id_test = p_id_test;
+        IF v_count > 0 THEN
+            RAISE_APPLICATION_ERROR(-20120, 'Тест уже проходили. Для изменения состава создайте новый тест.');
+        END IF;
+        IF v_active = 1 THEN
+            RAISE_APPLICATION_ERROR(-20121, 'Сначала скройте тест, чтобы изменить его вопросы.');
+        END IF;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20105, 'Тест не найден');
+    END;
+
+    PROCEDURE require_editable_question(p_id_question NUMBER) IS
+        v_id NUMBER;
+        v_count NUMBER;
+    BEGIN
+        SELECT id_question INTO v_id FROM question WHERE id_question = p_id_question FOR UPDATE;
+        SELECT COUNT(*) INTO v_count
+        FROM question_in_test qt JOIN test t ON t.id_test = qt.id_test
+        WHERE qt.id_question = p_id_question
+          AND (t.is_active = 1 OR EXISTS (SELECT 1 FROM attempt a WHERE a.id_test = t.id_test));
+        IF v_count > 0 THEN
+            RAISE_APPLICATION_ERROR(-20122, 'Вопрос используется в опубликованном или уже пройденном тесте. Создайте новый вопрос.');
+        END IF;
+    END;
+
+    FUNCTION question_ready(p_id_question NUMBER) RETURN NUMBER IS
+        v_count NUMBER;
+    BEGIN
+        SELECT COUNT(*) INTO v_count FROM question q
+        JOIN question_type ty ON ty.type_id = q.type_id
+        WHERE q.id_question = p_id_question AND q.is_active = 1
+          AND ((ty.is_numeric_answer = 1 AND q.correct_number IS NOT NULL)
+            OR (ty.is_text_answer = 1 AND TRIM(q.correct_text) IS NOT NULL)
+            OR (ty.uses_options = 1
+                AND (SELECT COUNT(*) FROM answer_option o WHERE o.id_question = q.id_question) >= 2
+                AND ((ty.is_multi_select = 0 AND (SELECT COUNT(*) FROM answer_option o WHERE o.id_question = q.id_question AND o.is_correct = 1) = 1)
+                  OR (ty.is_multi_select = 1 AND (SELECT COUNT(*) FROM answer_option o WHERE o.id_question = q.id_question AND o.is_correct = 1) >= 1))));
+        RETURN v_count;
+    END;
+
+    PROCEDURE set_user_role(p_uid_admin NUMBER, p_uid NUMBER, p_role_code VARCHAR2) IS
+        v_role NUMBER;
+    BEGIN
+        require_admin(p_uid_admin);
+        IF p_uid_admin = p_uid AND p_role_code <> 'ADMIN' THEN
+            RAISE_APPLICATION_ERROR(-20032, 'Нельзя снять роль администратора у самого себя.');
+        END IF;
+        SELECT id_role INTO v_role FROM role WHERE role_name = p_role_code;
+        UPDATE users SET id_role = v_role WHERE user_id = p_uid;
+        IF SQL%ROWCOUNT = 0 THEN
+            RAISE_APPLICATION_ERROR(-20033, 'Пользователь не найден.');
+        END IF;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN RAISE_APPLICATION_ERROR(-20034, 'Неизвестная роль.');
+    END;
+
+    PROCEDURE delete_answer_option(p_id_question NUMBER, p_id_option NUMBER, p_uid_author NUMBER) IS
+        v_count NUMBER;
+    BEGIN
+        require_author(p_uid_author);
+        SELECT COUNT(*) INTO v_count FROM question WHERE id_question = p_id_question AND (uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1);
+        IF v_count = 0 THEN RAISE_APPLICATION_ERROR(-20025, 'Вопрос не найден.'); END IF;
+        require_editable_question(p_id_question);
+        DELETE FROM answer_option WHERE id_question = p_id_question AND id_option = p_id_option;
+    END;
+
+    PROCEDURE remove_test_question(p_uid_author NUMBER, p_id_test NUMBER, p_id_question NUMBER) IS
+    BEGIN
+        require_editable_test(p_uid_author, p_id_test);
+        DELETE FROM question_in_test WHERE id_test = p_id_test AND id_question = p_id_question;
+    END;
+
     FUNCTION is_terminal_attempt_status(p_status VARCHAR2) RETURN NUMBER IS
         v_terminal NUMBER;
     BEGIN
@@ -89,6 +169,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         v_password_hash users.password_hash%TYPE;
         v_user_id users.user_id%TYPE;
         v_role_id role.id_role%TYPE;
+        v_count NUMBER;
     BEGIN
         IF p_user_name IS NULL OR LENGTH(TRIM(p_user_name)) = 0 THEN
             RAISE_APPLICATION_ERROR(-20010, 'Имя пользователя не может быть пустым');
@@ -98,7 +179,11 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         END IF;
 
         SELECT STANDARD_HASH(p_password, 'SHA256') INTO v_password_hash FROM dual;
-        SELECT id_role INTO v_role_id FROM role WHERE role_name = 'USER';
+        SELECT id_role INTO v_role_id FROM role WHERE role_name = 'USER' FOR UPDATE;
+        SELECT COUNT(*) INTO v_count FROM users;
+        IF v_count = 0 THEN
+            SELECT id_role INTO v_role_id FROM role WHERE role_name = 'ADMIN';
+        END IF;
 
         INSERT INTO users (id_role, password_hash, user_name, created_at, is_active)
         VALUES (v_role_id, v_password_hash, TRIM(p_user_name), SYSDATE, 1)
@@ -129,7 +214,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
 
         SELECT STANDARD_HASH(p_password, 'SHA256') INTO v_password_hash FROM dual;
 
-        IF v_hash <> v_password_hash THEN
+        IF p_password IS NULL OR v_password_hash IS NULL OR v_hash <> v_password_hash THEN
             RAISE_APPLICATION_ERROR(-20003, 'Неверный пароль');
         END IF;
 
@@ -202,13 +287,18 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         INTO v_active
         FROM test
         WHERE id_test = p_id_test
-          AND uid_author = p_uid_author;
+          AND (uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1) FOR UPDATE;
         SELECT COUNT(*) INTO v_q_count FROM question_in_test WHERE id_test = p_id_test;
 
         IF v_active = 0 THEN
             IF v_q_count = 0 THEN
                 RAISE_APPLICATION_ERROR(-20104, 'Нельзя опубликовать тест без вопросов');
             END IF;
+            FOR q IN (SELECT id_question FROM question_in_test WHERE id_test = p_id_test) LOOP
+                IF question_ready(q.id_question) <> 1 THEN
+                    RAISE_APPLICATION_ERROR(-20123, 'Вопрос #' || q.id_question || ': проверьте активность, эталон и варианты (минимум два, с правильным ответом).');
+                END IF;
+            END LOOP;
             UPDATE test SET is_active = 1 WHERE id_test = p_id_test;
         ELSE
             IF p_direct_call = 1 THEN
@@ -232,7 +322,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         v_question_active NUMBER;
         v_test_exists NUMBER;
     BEGIN
-        require_author(p_uid_author);
+        require_editable_test(p_uid_author, p_id_test);
 
         IF p_is_required NOT IN (0, 1) THEN
             RAISE_APPLICATION_ERROR(-20106, 'is_required должен быть 0 или 1');
@@ -242,7 +332,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         INTO v_test_exists
         FROM test
         WHERE id_test = p_id_test
-          AND uid_author = p_uid_author;
+          AND (uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1);
         IF v_test_exists = 0 THEN
             RAISE_APPLICATION_ERROR(-20105, 'Тест не найден');
         END IF;
@@ -251,7 +341,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         INTO v_question_active
         FROM question
         WHERE id_question = p_id_question
-          AND uid_author = p_uid_author;
+          AND (uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1);
         IF v_question_active <> 1 THEN
             RAISE_APPLICATION_ERROR(-20107, 'Нельзя добавить неактивный вопрос');
         END IF;
@@ -272,18 +362,27 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         v_exists NUMBER;
         v_order NUMBER := 1;
     BEGIN
-        require_author(p_uid_author);
+        require_editable_test(p_uid_author, p_id_test);
 
         SELECT id_level, question_count, id_category
         INTO v_id_level, v_question_count, v_id_category
         FROM test
         WHERE id_test = p_id_test
-          AND uid_author = p_uid_author;
+          AND (uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1);
 
         IF v_id_level IS NULL OR v_question_count IS NULL OR v_question_count <= 0 THEN
             RAISE_APPLICATION_ERROR(-20110, 'Для автогенерации заполните сложность и количество вопросов');
         END IF;
 
+        v_exists := 0;
+        FOR q IN (SELECT id_question FROM question WHERE (uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1)
+                  AND is_active = 1 AND id_level = v_id_level
+                  AND (v_id_category IS NULL OR id_category = v_id_category)) LOOP
+            IF question_ready(q.id_question) = 1 THEN v_exists := v_exists + 1; END IF;
+        END LOOP;
+        IF v_exists < v_question_count THEN
+            RAISE_APPLICATION_ERROR(-20111, 'Недостаточно готовых вопросов автора для выбранной категории и сложности.');
+        END IF;
         DELETE FROM question_in_test WHERE id_test = p_id_test;
 
         FOR rec IN (
@@ -293,11 +392,13 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
                 FROM question q
                 WHERE q.is_active = 1
                   AND q.id_level = v_id_level
+                  AND (q.uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1)
                   AND (v_id_category IS NULL OR q.id_category = v_id_category)
                 ORDER BY DBMS_RANDOM.VALUE
             )
-            WHERE ROWNUM <= v_question_count
         ) LOOP
+            IF question_ready(rec.id_question) = 0 THEN CONTINUE; END IF;
+            EXIT WHEN v_order > v_question_count;
             INSERT INTO question_in_test (id_test, id_question, weight, order_num, is_required, time_limit)
             VALUES (p_id_test, rec.id_question, 1, v_order, 1, NULL);
             v_order := v_order + 1;
@@ -318,7 +419,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
             RAISE_APPLICATION_ERROR(-20020, 'Название типа вопроса не может быть пустым');
         END IF;
         INSERT INTO question_type (type_code, type_name, uses_options, is_multi_select, is_numeric_answer, is_text_answer)
-        VALUES (UPPER(REPLACE(TRIM(p_type_name), ' ', '_')), TRIM(p_type_name), 0, 0, 0, 1);
+        VALUES (SUBSTR(UPPER(REPLACE(TRIM(p_type_name), ' ', '_')), 1, 30), TRIM(p_type_name), 0, 0, 0, 1);
     END;
 
     PROCEDURE add_category(p_category_name VARCHAR2, p_category_description VARCHAR2) IS
@@ -352,11 +453,21 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
 
     FUNCTION add_question_id(p_uid_author NUMBER, p_question_text VARCHAR2, p_id_category NUMBER, p_id_level NUMBER, p_type_id NUMBER, p_correct_text VARCHAR2, p_correct_number NUMBER, p_tolerance NUMBER, p_explanation VARCHAR2) RETURN NUMBER IS
         v_question_id question.id_question%TYPE;
+        v_numeric NUMBER;
+        v_text NUMBER;
     BEGIN
         IF p_question_text IS NULL OR LENGTH(TRIM(p_question_text)) = 0 THEN
             RAISE_APPLICATION_ERROR(-20021, 'Текст вопроса не может быть пустым');
         END IF;
         require_author(p_uid_author);
+
+        SELECT is_numeric_answer, is_text_answer INTO v_numeric, v_text FROM question_type WHERE type_id = p_type_id;
+        IF v_numeric = 1 AND p_correct_number IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20035, 'Для числового вопроса укажите правильное число.');
+        END IF;
+        IF v_text = 1 AND TRIM(p_correct_text) IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20036, 'Для текстового вопроса укажите правильный ответ.');
+        END IF;
 
         INSERT INTO question (uid_author, id_category, id_level, type_id, question_text, explanation, correct_text, correct_number, tolerance, created_at, is_active)
         VALUES (p_uid_author, p_id_category, p_id_level, p_type_id, TRIM(p_question_text), p_explanation, p_correct_text, p_correct_number, p_tolerance, SYSDATE, 1)
@@ -367,6 +478,8 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
 
     PROCEDURE add_answer_option(p_id_question NUMBER, p_option_text VARCHAR2, p_is_correct NUMBER) IS
         v_question_cnt NUMBER;
+        v_options NUMBER;
+        v_multi NUMBER;
     BEGIN
         IF p_option_text IS NULL OR LENGTH(TRIM(p_option_text)) = 0 THEN
             RAISE_APPLICATION_ERROR(-20023, 'Текст варианта не может быть пустым');
@@ -375,6 +488,14 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
             RAISE_APPLICATION_ERROR(-20024, 'Признак правильности должен быть 0 или 1');
         END IF;
 
+        require_editable_question(p_id_question);
+        SELECT ty.uses_options, ty.is_multi_select INTO v_options, v_multi
+        FROM question q JOIN question_type ty ON ty.type_id = q.type_id WHERE q.id_question = p_id_question;
+        IF v_options = 0 THEN RAISE_APPLICATION_ERROR(-20037, 'Этот тип вопроса не использует варианты.'); END IF;
+        SELECT COUNT(*) INTO v_question_cnt FROM answer_option WHERE id_question = p_id_question AND is_correct = 1;
+        IF p_is_correct = 1 AND v_multi = 0 AND v_question_cnt > 0 THEN
+            RAISE_APPLICATION_ERROR(-20038, 'Для этого типа допустим только один правильный вариант. Сначала удалите ошибочный.');
+        END IF;
         SELECT COUNT(*) INTO v_question_cnt FROM question WHERE id_question = p_id_question;
         IF v_question_cnt = 0 THEN
             RAISE_APPLICATION_ERROR(-20025, 'Вопрос не найден');
@@ -391,7 +512,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         UPDATE question
         SET is_active = 0
         WHERE id_question = p_id_question
-          AND uid_author = p_uid_author;
+          AND (uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1);
 
         IF SQL%ROWCOUNT = 0 THEN
             RAISE_APPLICATION_ERROR(-20028, 'Вопрос не найден');
@@ -413,7 +534,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         INTO v_test_cnt
         FROM test
         WHERE id_test = p_id_test
-          AND uid_author = p_uid_author;
+          AND (uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1);
         IF v_test_cnt = 0 THEN
             RAISE_APPLICATION_ERROR(-20201, 'Тест не найден');
         END IF;
@@ -440,7 +561,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
             SELECT 1
             FROM test t
             WHERE t.id_test = ta.id_test
-              AND t.uid_author = p_uid_author
+              AND (t.uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1)
           );
 
         IF SQL%ROWCOUNT = 0 THEN
@@ -451,6 +572,10 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
     FUNCTION check_access(p_id_test NUMBER, p_uid NUMBER) RETURN NUMBER IS
         v_cnt NUMBER;
     BEGIN
+        IF check_admin_role(p_uid) = 1 THEN
+            SELECT COUNT(*) INTO v_cnt FROM test WHERE id_test = p_id_test;
+            RETURN v_cnt;
+        END IF;
         SELECT COUNT(*)
         INTO v_cnt
         FROM test_access ta
@@ -482,7 +607,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         v_attempt_no NUMBER;
         v_attempt_id attempt.id_attempt%TYPE;
     BEGIN
-        SELECT is_active INTO v_user_active FROM users WHERE user_id = p_uid;
+        SELECT is_active INTO v_user_active FROM users WHERE user_id = p_uid FOR UPDATE;
         IF v_user_active <> 1 THEN
             RAISE_APPLICATION_ERROR(-20300, 'Пользователь неактивен');
         END IF;
@@ -490,8 +615,8 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         SELECT is_active, attempt_limit
         INTO v_test_active, v_attempt_limit
         FROM test
-        WHERE id_test = p_id_test;
-        IF v_test_active <> 1 THEN
+        WHERE id_test = p_id_test FOR UPDATE;
+        IF v_test_active <> 1 AND check_admin_role(p_uid) <> 1 THEN
             RAISE_APPLICATION_ERROR(-20301, 'Тест скрыт');
         END IF;
 
@@ -500,11 +625,24 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
             RAISE_APPLICATION_ERROR(-20302, 'Нет доступа к тесту');
         END IF;
 
+        SELECT MIN(id_attempt) INTO v_attempt_id FROM attempt
+        WHERE user_id = p_uid AND id_test = p_id_test AND status = 'STARTED';
+        IF v_attempt_id IS NOT NULL THEN RETURN v_attempt_id; END IF;
+        SELECT COUNT(*) INTO v_attempts_used FROM question_in_test WHERE id_test = p_id_test;
+        IF v_attempts_used = 0 THEN RAISE_APPLICATION_ERROR(-20104, 'В тесте нет вопросов.'); END IF;
+        IF v_test_active = 0 THEN
+            FOR q IN (SELECT id_question FROM question_in_test WHERE id_test = p_id_test) LOOP
+                IF question_ready(q.id_question) <> 1 THEN
+                    RAISE_APPLICATION_ERROR(-20123, 'Вопрос #' || q.id_question || ' ещё не готов к прохождению.');
+                END IF;
+            END LOOP;
+        END IF;
+
         SELECT NVL(MAX(attempt_number), 0)
         INTO v_attempts_used
         FROM attempt
         WHERE user_id = p_uid AND id_test = p_id_test;
-        IF v_attempts_used >= v_attempt_limit THEN
+        IF v_attempts_used >= v_attempt_limit AND check_admin_role(p_uid) <> 1 THEN
             RAISE_APPLICATION_ERROR(-20303, 'Превышен лимит попыток');
         END IF;
 
@@ -532,6 +670,30 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         v_answer_id := save_answer_id(p_id_attempt, p_id_qt, p_answer_text, p_answer_number, p_answer_time, p_uid);
     END;
 
+    FUNCTION touch_question(p_id_attempt NUMBER, p_id_qt NUMBER, p_uid NUMBER) RETURN NUMBER IS
+        v_status attempt.status%TYPE;
+        v_test_id NUMBER;
+        v_uid NUMBER;
+        v_started DATE;
+        v_count NUMBER;
+    BEGIN
+        SELECT status, id_test, user_id INTO v_status, v_test_id, v_uid
+        FROM attempt WHERE id_attempt = p_id_attempt FOR UPDATE;
+        IF v_uid <> p_uid AND check_admin_role(p_uid) <> 1 THEN RAISE_APPLICATION_ERROR(-20313, 'Попытка не принадлежит пользователю'); END IF;
+        IF v_status <> 'STARTED' THEN RAISE_APPLICATION_ERROR(-20305, 'Попытка завершена'); END IF;
+        SELECT COUNT(*) INTO v_count FROM question_in_test WHERE id_qt = p_id_qt AND id_test = v_test_id;
+        IF v_count = 0 THEN RAISE_APPLICATION_ERROR(-20312, 'Вопрос не относится к данной попытке'); END IF;
+        BEGIN
+            SELECT started_at INTO v_started FROM attempt_question_visit
+            WHERE id_attempt = p_id_attempt AND id_qt = p_id_qt;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                v_started := SYSDATE;
+                INSERT INTO attempt_question_visit (id_attempt, id_qt, started_at) VALUES (p_id_attempt, p_id_qt, v_started);
+        END;
+        RETURN GREATEST(0, FLOOR((SYSDATE - v_started) * 86400));
+    END;
+
     FUNCTION save_answer_id(
         p_id_attempt NUMBER,
         p_id_qt NUMBER,
@@ -547,14 +709,20 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         v_test_time_limit NUMBER;
         v_answer_id answer.id_answer%TYPE;
         v_qt_cnt NUMBER;
+        v_elapsed NUMBER;
+        v_required NUMBER;
+        v_q_limit NUMBER;
+        v_uses_options NUMBER;
+        v_numeric NUMBER;
+        v_text NUMBER;
     BEGIN
         SELECT a.status, a.user_id, a.id_test, a.start_date, t.time_limit
         INTO v_status, v_attempt_uid, v_test_id, v_started, v_test_time_limit
         FROM attempt a
         JOIN test t ON t.id_test = a.id_test
-        WHERE a.id_attempt = p_id_attempt;
+        WHERE a.id_attempt = p_id_attempt FOR UPDATE OF a.status;
 
-        IF v_attempt_uid <> p_uid THEN
+        IF v_attempt_uid <> p_uid AND check_admin_role(p_uid) <> 1 THEN
             RAISE_APPLICATION_ERROR(-20313, 'Попытка не принадлежит пользователю');
         END IF;
 
@@ -573,11 +741,23 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         END IF;
 
         IF v_test_time_limit IS NOT NULL
-           AND (SYSDATE - v_started) * 86400 > v_test_time_limit THEN
-            UPDATE attempt
-            SET status = 'TIME_EXPIRED', end_date = SYSDATE, finished_in_time = 0
-            WHERE id_attempt = p_id_attempt;
-            RAISE_APPLICATION_ERROR(-20306, 'Время теста истекло');
+           AND (SYSDATE - v_started) * 86400 >= v_test_time_limit THEN
+            finish_attempt(p_id_attempt, p_uid);
+            RETURN 0;
+        END IF;
+
+        SELECT MIN(id_answer) INTO v_answer_id FROM answer WHERE id_attempt = p_id_attempt AND id_qt = p_id_qt;
+        IF v_answer_id IS NOT NULL THEN
+            RAISE_APPLICATION_ERROR(-20307, 'Ответ уже сохранён. Перейдите к следующему вопросу.');
+        END IF;
+        v_elapsed := touch_question(p_id_attempt, p_id_qt, p_uid);
+        SELECT qt.is_required, qt.time_limit, ty.uses_options, ty.is_numeric_answer, ty.is_text_answer
+        INTO v_required, v_q_limit, v_uses_options, v_numeric, v_text
+        FROM question_in_test qt JOIN question q ON q.id_question = qt.id_question
+        JOIN question_type ty ON ty.type_id = q.type_id WHERE qt.id_qt = p_id_qt;
+        IF v_required = 1 AND (v_q_limit IS NULL OR v_elapsed < v_q_limit) THEN
+            IF v_numeric = 1 AND p_answer_number IS NULL THEN RAISE_APPLICATION_ERROR(-20314, 'Введите числовой ответ.'); END IF;
+            IF v_text = 1 AND TRIM(p_answer_text) IS NULL THEN RAISE_APPLICATION_ERROR(-20315, 'Введите текстовый ответ.'); END IF;
         END IF;
 
         INSERT INTO answer (
@@ -585,7 +765,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
             answer_date, answer_time, is_checked
         ) VALUES (
             p_id_attempt, p_id_qt, p_answer_text, p_answer_number,
-            SYSDATE, p_answer_time, 0
+            SYSDATE, v_elapsed, 0
         )
         RETURNING id_answer INTO v_answer_id;
 
@@ -629,10 +809,10 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         v_is_multi_select NUMBER;
         v_is_numeric_answer NUMBER;
         v_is_text_answer NUMBER;
-        v_correct_text VARCHAR2(500);
+        v_correct_text question.correct_text%TYPE;
         v_correct_number NUMBER;
         v_tolerance NUMBER;
-        v_answer_text VARCHAR2(500);
+        v_answer_text answer.answer_text%TYPE;
         v_answer_number NUMBER;
         v_cnt NUMBER;
         v_correct NUMBER := 0;
@@ -689,7 +869,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
                 END IF;
             END IF;
         ELSIF v_is_text_answer = 1 THEN
-            IF LOWER(TRIM(NVL(v_answer_text, ''))) = LOWER(TRIM(NVL(v_correct_text, '#NULL#'))) THEN
+            IF v_correct_text IS NOT NULL AND LOWER(TRIM(v_answer_text)) = LOWER(TRIM(v_correct_text)) THEN
                 v_correct := 1;
             END IF;
         ELSIF v_is_numeric_answer = 1 THEN
@@ -723,9 +903,9 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         JOIN question_type qt_type ON qt_type.type_id = q.type_id
         WHERE a.id_answer = p_id_answer;
 
-        IF v_q_time_limit IS NOT NULL AND v_ans_time > v_q_time_limit THEN
+        IF v_q_time_limit IS NOT NULL AND v_ans_time >= v_q_time_limit THEN
             v_score := 0;
-            UPDATE answer SET earned_score = v_score WHERE id_answer = p_id_answer;
+            UPDATE answer SET earned_score = v_score, is_correct = 0, is_checked = 1 WHERE id_answer = p_id_answer;
             RETURN v_score;
         END IF;
 
@@ -800,26 +980,35 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         v_time_limit NUMBER;
         v_new_status VARCHAR2(30);
         v_finished_in_time NUMBER := 1;
+        v_missing NUMBER;
     BEGIN
         SELECT a.status, a.user_id, a.start_date, t.time_limit
         INTO v_status, v_attempt_uid, v_started, v_time_limit
         FROM attempt a
         JOIN test t ON t.id_test = a.id_test
-        WHERE a.id_attempt = p_id_attempt;
+        WHERE a.id_attempt = p_id_attempt FOR UPDATE OF a.status;
 
-        IF v_attempt_uid <> p_uid THEN
+        IF v_attempt_uid <> p_uid AND check_admin_role(p_uid) <> 1 THEN
             RAISE_APPLICATION_ERROR(-20313, 'Попытка не принадлежит пользователю');
         END IF;
 
         IF v_status <> 'STARTED' THEN
-            RAISE_APPLICATION_ERROR(-20311, 'Попытка уже завершена');
+            RETURN;
         END IF;
 
         v_new_status := 'FINISHED';
         IF v_time_limit IS NOT NULL
-           AND (SYSDATE - v_started) * 86400 > v_time_limit THEN
+           AND (SYSDATE - v_started) * 86400 >= v_time_limit THEN
             v_new_status := 'TIME_EXPIRED';
             v_finished_in_time := 0;
+        END IF;
+
+        IF v_new_status = 'FINISHED' THEN
+            SELECT COUNT(*) INTO v_missing FROM question_in_test qt
+            JOIN attempt a ON a.id_test = qt.id_test
+            WHERE a.id_attempt = p_id_attempt AND qt.is_required = 1
+              AND NOT EXISTS (SELECT 1 FROM answer x WHERE x.id_attempt = p_id_attempt AND x.id_qt = qt.id_qt);
+            IF v_missing > 0 THEN RAISE_APPLICATION_ERROR(-20316, 'Сначала ответьте на обязательные вопросы.'); END IF;
         END IF;
 
         UPDATE attempt
@@ -875,7 +1064,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
             JOIN question_type qt ON qt.type_id = q.type_id
             JOIN category c ON c.id_category = q.id_category
             JOIN difficulty_level d ON d.id_level = q.id_level
-            WHERE q.uid_author = p_uid_author
+            WHERE (q.uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1)
             ORDER BY q.id_question DESC;
         RETURN rc;
     END;
@@ -885,12 +1074,14 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
     BEGIN
         OPEN rc FOR
             SELECT q.id_question, q.question_text, q.explanation, q.correct_text, q.correct_number, q.tolerance,
-                   q.is_active, qt.type_name, c.category_name, d.level_name, q.image_path
+                   q.is_active, qt.type_name, c.category_name, d.level_name, q.image_path, qt.uses_options,
+                   (SELECT COUNT(*) FROM question_in_test x JOIN test t ON t.id_test = x.id_test
+                    WHERE x.id_question = q.id_question AND (t.is_active = 1 OR EXISTS (SELECT 1 FROM attempt a WHERE a.id_test = t.id_test)))
             FROM question q
             JOIN question_type qt ON qt.type_id = q.type_id
             JOIN category c ON c.id_category = q.id_category
             JOIN difficulty_level d ON d.id_level = q.id_level
-            WHERE q.id_question = p_id_question AND q.uid_author = p_uid_author;
+            WHERE q.id_question = p_id_question AND (q.uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1);
         RETURN rc;
     END;
 
@@ -902,7 +1093,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
             FROM answer_option ao
             JOIN question q ON q.id_question = ao.id_question
             WHERE ao.id_question = p_id_question
-              AND q.uid_author = p_uid_author
+              AND (q.uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1)
             ORDER BY ao.id_option;
         RETURN rc;
     END;
@@ -912,15 +1103,12 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
     BEGIN
         OPEN rc FOR
             SELECT t.id_test, t.test_name, t.test_description, c.category_name, d.level_name,
-                   t.time_limit, t.attempt_limit, t.question_count, t.show_feedback,
+                   t.time_limit, t.attempt_limit, (SELECT COUNT(*) FROM question_in_test qt WHERE qt.id_test = t.id_test), t.show_feedback,
                    NVL((SELECT MAX(a.attempt_number) FROM attempt a WHERE a.user_id = p_uid AND a.id_test = t.id_test), 0) AS used_attempts
-            FROM test_access ta
-            JOIN test t ON t.id_test = ta.id_test
+            FROM test t
             LEFT JOIN category c ON c.id_category = t.id_category
             LEFT JOIN difficulty_level d ON d.id_level = t.id_level
-            WHERE ta.user_id = p_uid
-              AND ta.is_active = 1
-              AND t.is_active = 1
+            WHERE check_access(t.id_test, p_uid) = 1
             ORDER BY t.id_test DESC;
         RETURN rc;
     END;
@@ -930,12 +1118,12 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
     BEGIN
         OPEN rc FOR
             SELECT t.id_test, t.test_name, t.test_description, c.category_name, d.level_name,
-                   t.time_limit, t.attempt_limit, t.question_count, t.show_feedback,
+                   t.time_limit, t.attempt_limit, (SELECT COUNT(*) FROM question_in_test qt WHERE qt.id_test = t.id_test), t.show_feedback,
                    NVL((SELECT MAX(a.attempt_number) FROM attempt a WHERE a.user_id = p_uid AND a.id_test = t.id_test), 0) AS used_attempts
             FROM test t
             LEFT JOIN category c ON c.id_category = t.id_category
             LEFT JOIN difficulty_level d ON d.id_level = t.id_level
-            WHERE t.id_test = p_id_test AND t.is_active = 1;
+            WHERE t.id_test = p_id_test AND check_access(t.id_test, p_uid) = 1;
         RETURN rc;
     END;
 
@@ -945,10 +1133,11 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         OPEN rc FOR
             SELECT a.id_attempt, a.status, a.start_date, a.end_date, t.id_test, t.test_name,
                    t.time_limit, FLOOR((SYSDATE - a.start_date) * 86400) AS elapsed_seconds,
-                   CASE WHEN t.time_limit IS NULL THEN NULL ELSE GREATEST(0, t.time_limit - FLOOR((SYSDATE - a.start_date) * 86400)) END AS remaining_seconds
+                   CASE WHEN t.time_limit IS NULL THEN NULL ELSE GREATEST(0, t.time_limit - FLOOR((SYSDATE - a.start_date) * 86400)) END AS remaining_seconds,
+                   a.user_id, (SELECT u.user_name FROM users u WHERE u.user_id = a.user_id)
             FROM attempt a
             JOIN test t ON t.id_test = a.id_test
-            WHERE a.id_attempt = p_id_attempt AND a.user_id = p_uid;
+            WHERE a.id_attempt = p_id_attempt AND (a.user_id = p_uid OR check_admin_role(p_uid) = 1);
         RETURN rc;
     END;
 
@@ -959,7 +1148,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
             SELECT qt.id_qt, qt.order_num, qt.weight, qt.time_limit,
                    q.id_question, q.question_text, q.type_id, q.explanation,
                    qt_type.uses_options, qt_type.is_multi_select, qt_type.is_numeric_answer, qt_type.is_text_answer,
-                   q.image_path
+                   q.image_path, qt.is_required
             FROM question_in_test qt
             JOIN question q ON q.id_question = qt.id_question
             JOIN question_type qt_type ON qt_type.type_id = q.type_id
@@ -1011,7 +1200,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
     BEGIN
         OPEN rc FOR
             SELECT a.id_attempt, a.attempt_number, a.start_date, a.end_date, a.status, a.score, a.percent_result,
-                   t.id_test, t.test_name, t.show_feedback,
+                   t.id_test, t.test_name, CASE WHEN check_admin_role(p_uid) = 1 THEN 1 ELSE t.show_feedback END,
                    NVL((
                        SELECT AVG(x.percent_result)
                        FROM attempt x
@@ -1023,10 +1212,11 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
                                AND s.is_successful = 1
                          )
                          AND x.percent_result IS NOT NULL
-                   ), 0) AS avg_percent
+                   ), 0) AS avg_percent,
+                   a.user_id, (SELECT u.user_name FROM users u WHERE u.user_id = a.user_id)
             FROM attempt a
             JOIN test t ON t.id_test = a.id_test
-            WHERE a.id_attempt = p_id_attempt AND a.user_id = p_uid;
+            WHERE a.id_attempt = p_id_attempt AND (a.user_id = p_uid OR check_admin_role(p_uid) = 1);
         RETURN rc;
     END;
 
@@ -1097,7 +1287,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
             FROM test t
             LEFT JOIN category c ON c.id_category = t.id_category
             LEFT JOIN difficulty_level d ON d.id_level = t.id_level
-            WHERE t.uid_author = p_uid_author
+            WHERE (t.uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1)
             ORDER BY t.id_test DESC;
         RETURN rc;
     END;
@@ -1107,11 +1297,12 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
     BEGIN
         OPEN rc FOR
             SELECT t.id_test, t.test_name, t.test_description, t.is_active, t.question_count, t.attempt_limit, t.time_limit,
-                   t.show_feedback, c.category_name, d.level_name
+                   t.show_feedback, c.category_name, d.level_name,
+                   (SELECT COUNT(*) FROM attempt a WHERE a.id_test = t.id_test)
             FROM test t
             LEFT JOIN category c ON c.id_category = t.id_category
             LEFT JOIN difficulty_level d ON d.id_level = t.id_level
-            WHERE t.id_test = p_id_test AND t.uid_author = p_uid_author;
+            WHERE t.id_test = p_id_test AND (t.uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1);
         RETURN rc;
     END;
 
@@ -1145,9 +1336,9 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         OPEN rc FOR
             SELECT q.id_question, q.question_text, q.image_path
             FROM question q
-            JOIN test t ON t.uid_author = q.uid_author
+            JOIN test t ON (t.uid_author = q.uid_author OR check_admin_role(p_uid_author) = 1)
             WHERE t.id_test = p_id_test
-              AND q.uid_author = p_uid_author
+              AND (q.uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1)
               AND q.is_active = 1
               AND NOT EXISTS (
                   SELECT 1 FROM question_in_test x WHERE x.id_test = p_id_test AND x.id_question = q.id_question
@@ -1162,7 +1353,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
         OPEN rc FOR
             SELECT id_test, test_name
             FROM test
-            WHERE id_test = p_id_test AND uid_author = p_uid_author;
+            WHERE id_test = p_id_test AND (uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1);
         RETURN rc;
     END;
 
@@ -1194,7 +1385,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
             LEFT JOIN attempt a ON a.id_test = t.id_test
             LEFT JOIN attempt_status s ON s.status_code = a.status
             WHERE t.id_test = p_id_test
-              AND t.uid_author = p_uid_author
+              AND (t.uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1)
             GROUP BY t.test_name;
         RETURN rc;
     END;
@@ -1227,7 +1418,7 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
                       AND s.is_successful = 1
                 )
             WHERE t.id_test = p_id_test
-              AND t.uid_author = p_uid_author
+              AND (t.uid_author = p_uid_author OR check_admin_role(p_uid_author) = 1)
             GROUP BY qt.order_num, q.question_text
             ORDER BY qt.order_num;
         RETURN rc;
@@ -1243,6 +1434,21 @@ CREATE OR REPLACE PACKAGE BODY quiz_platform AS
             FROM users u
             JOIN role r ON r.id_role = u.id_role
             ORDER BY u.user_id DESC;
+        RETURN rc;
+    END;
+
+    FUNCTION list_admin_attempts(p_uid_admin NUMBER) RETURN SYS_REFCURSOR IS
+        rc SYS_REFCURSOR;
+    BEGIN
+        require_admin(p_uid_admin);
+        OPEN rc FOR
+            SELECT a.id_attempt, t.test_name, a.attempt_number, a.status,
+                   a.score, a.percent_result, a.start_date, a.end_date,
+                   a.user_id, u.user_name
+            FROM attempt a
+            JOIN test t ON t.id_test = a.id_test
+            JOIN users u ON u.user_id = a.user_id
+            ORDER BY a.id_attempt DESC;
         RETURN rc;
     END;
 

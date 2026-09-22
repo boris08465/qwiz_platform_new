@@ -21,10 +21,11 @@
   <a href="/author/tests/{{ test[0] }}/access">Доступ к тесту</a>
 </p>
 <form method="post" action="/author/tests/{{ test[0] }}/generate">
-  <button type="submit">Автоматически сформировать тест</button>
+  <button type="submit" {% if test[3] or test[10] or not test[4] or not test[9] %}disabled{% endif %}>Автоматически сформировать тест</button>
 </form>
+<p class="hint">Автогенерация заменяет текущий набор готовыми вопросами {{ 'всех авторов' if session.get('role_code') == 'ADMIN' else 'из вашего банка' }}. Нужны сложность и плановое количество; тест должен быть скрыт и ещё не пройден.</p>
 <form method="post" action="/author/tests/{{ test[0] }}/publish">
-  <button type="submit">Опубликовать / скрыть тест</button>
+  <button type="submit">{{ 'Скрыть тест' if test[3] else 'Опубликовать тест' }}</button>
 </form>
 
 <h3>Вопросы в тесте</h3>
@@ -34,6 +35,7 @@
       Порядок {{ q[1] }} | Вопрос #{{ q[5] }} | Вес {{ q[2] }} | {{ q[6] }}
       {% if q[7] %}| фото{% endif %}
     </li>
+  {% else %}<li>Добавьте вопросы вручную или используйте автогенерацию.</li>
   {% endfor %}
 </ul>
 {% endblock %}

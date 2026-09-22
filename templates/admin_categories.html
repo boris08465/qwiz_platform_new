@@ -2,6 +2,7 @@
 {% block title %}Админ: Категории - Qwiz{% endblock %}
 {% block content %}
 <h2>Админ: Категории</h2>
+<p><a href="/author/categories">Добавить категорию</a></p>
 <ul>
   {% for c in categories %}
     <li>#{{ c[0] }} | {{ c[1] }}{% if c[2] %} | {{ c[2] }}{% endif %}</li>

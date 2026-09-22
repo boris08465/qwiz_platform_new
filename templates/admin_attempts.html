@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}Все попытки — Qwiz{% endblock %}
+{% block content %}
+<h2>Все попытки пользователей</h2>
+<p class="hint">Здесь доступны попытки всех участников. Действия в незавершённой попытке сохраняются от имени её участника.</p>
+<ul>
+  {% for a in attempts %}
+    <li>
+      <a href="{{ url_for('attempt_page' if a[3] == 'STARTED' else 'result_page', id_attempt=a[0]) }}">{{ 'Открыть' if a[3] == 'STARTED' else 'Результат' }} — попытка #{{ a[0] }}</a>
+      | Участник: {{ a[9] }} (UID {{ a[8] }}) | Тест: {{ a[1] }}
+      | {{ status_titles.get(a[3], a[3]) }}
+      | Балл: {{ a[4] if a[4] is not none else '-' }}
+      | Процент: {{ a[5] if a[5] is not none else '-' }}
+    </li>
+  {% else %}<li>Попыток пока нет.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

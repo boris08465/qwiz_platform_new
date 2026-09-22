@@ -1,4 +1,6 @@
-
+-- ONLY FOR A DISPOSABLE DEMO DATABASE. Deletes all application data.
+-- Never run this script to upgrade an existing installation.
+DELETE FROM attempt_question_visit;
 DELETE FROM answer_selected_option;
 DELETE FROM answer;
 DELETE FROM attempt;
@@ -193,6 +195,7 @@ BEGIN
         END;
     END LOOP;
 END;
+/
 
 
 CREATE SEQUENCE seq_role START WITH 4 INCREMENT BY 1;
@@ -216,4 +219,4 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('user1 user_id=1002 password=userpass');
     DBMS_OUTPUT.PUT_LINE('test_id=1');
 END;
-
+/

@@ -2,9 +2,11 @@
 {% block title %}Админ: Вопросы - Qwiz{% endblock %}
 {% block content %}
 <h2>Админ: Вопросы</h2>
+<p><a href="/author/questions/create">Создать вопрос</a></p>
 <ul>
   {% for q in questions %}
-    <li>#{{ q[0] }} | {{ q[1] }}{% if q[6] %} | фото{% endif %} | Автор: {{ q[2] }} | Тип: {{ q[3] }} | {{ 'Активен' if q[4] == 1 else 'Отключен' }}</li>
+    <li><a href="/author/questions/{{ q[0] }}">#{{ q[0] }} — {{ q[1] }}</a>{% if q[6] %} | фото{% endif %} | Автор: {{ q[2] }} | Тип: {{ q[3] }} | {{ 'Активен' if q[4] == 1 else 'Отключен' }}</li>
+  {% else %}<li>Вопросов пока нет.</li>
   {% endfor %}
 </ul>
 {% endblock %}

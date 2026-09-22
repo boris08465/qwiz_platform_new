@@ -4,13 +4,13 @@
 <h2>Регистрация</h2>
 <form method="post">
   <label for="user_name">Имя пользователя</label>
-  <input id="user_name" name="user_name" type="text" required>
+  <input id="user_name" name="user_name" type="text" maxlength="100" value="{{ request.form.get('user_name', '') }}" required>
 
   <label for="password">Пароль</label>
-  <input id="password" name="password" type="password" required>
+  <input id="password" name="password" type="password" minlength="4" required>
 
   <label for="password_repeat">Повтор пароля</label>
-  <input id="password_repeat" name="password_repeat" type="password" required>
+  <input id="password_repeat" name="password_repeat" type="password" minlength="4" required>
 
   <button type="submit">Зарегистрироваться</button>
 </form>

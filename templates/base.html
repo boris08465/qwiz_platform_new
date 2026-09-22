@@ -11,21 +11,31 @@
     <h1>Qwiz</h1>
     <nav>
       <a href="/">Главная</a>
-      <a href="/register">Регистрация</a>
-      <a href="/login">Вход</a>
+      {% if session.get('user_id') %}
       <a href="/dashboard">Кабинет</a>
       <a href="/profile">Профиль</a>
+      <a href="/tests">Доступные тесты</a>
+      <a href="/my-attempts">Мои попытки</a>
+      {% if session.get('role_code') in ('AUTHOR', 'ADMIN') %}
       <a href="/author/categories">Категории</a>
       <a href="/author/difficulty-levels">Сложности</a>
       <a href="/author/question-types">Типы вопросов</a>
       <a href="/author/questions">Банк вопросов</a>
-      <a href="/author/tests">Тесты автора</a>
+      <a href="/author/tests">{{ 'Все тесты: управление' if session.get('role_code') == 'ADMIN' else 'Тесты автора' }}</a>
+      {% endif %}
+      {% if session.get('role_code') == 'ADMIN' %}
       <a href="/admin/users">Админ: пользователи</a>
       <a href="/admin/tests">Админ: тесты</a>
       <a href="/admin/questions">Админ: вопросы</a>
+      <a href="/admin/attempts">Админ: все попытки</a>
       <a href="/admin/categories">Админ: категории</a>
       <a href="/admin/statistics">Админ: сводка</a>
+      {% endif %}
       <a href="/logout">Выход</a>
+      {% else %}
+      <a href="/register">Регистрация</a>
+      <a href="/login">Вход</a>
+      {% endif %}
     </nav>
   </header>
   <main>
@@ -33,7 +43,7 @@
       {% if messages %}
         <div class="flash-list">
           {% for category, message in messages %}
-            <div class="flash flash-{{ category }}">{{ message }}</div>
+            <div class="flash flash-{{ category }}" role="status">{{ message }}</div>
           {% endfor %}
         </div>
       {% endif %}

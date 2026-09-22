@@ -7,9 +7,13 @@
   <p><img class="question-image" src="{{ url_for('static', filename=question[10]) }}" alt="Фото к вопросу"></p>
 {% endif %}
 
+{% if question[12] %}
+<p class="hint">Вопрос используется в опубликованном или уже пройденном тесте. Варианты доступны только для просмотра.</p>
+{% else %}
+<p class="hint">Добавьте минимум два варианта. Для одиночного выбора нужен ровно один правильный ответ.</p>
 <form method="post">
   <label>Текст варианта</label>
-  <input type="text" name="option_text" required>
+  <input type="text" name="option_text" maxlength="500" required>
 
   <label>Правильный?</label>
   <select name="is_correct">
@@ -19,11 +23,18 @@
 
   <button type="submit">Добавить вариант</button>
 </form>
+{% endif %}
 
 <h3>Список вариантов</h3>
 <ul>
   {% for o in options %}
-    <li>#{{ o[0] }} - {{ o[1] }} | {{ 'Правильный' if o[2] == 1 else 'Неправильный' }}</li>
+    <li>#{{ o[0] }} - {{ o[1] }} | {{ 'Правильный' if o[2] == 1 else 'Неправильный' }}
+      {% if not question[12] %}
+      <form class="inline-form" method="post" action="{{ url_for('author_question_option_delete', id_question=question[0], id_option=o[0]) }}"><button class="secondary" type="submit">Удалить</button></form>
+      {% endif %}
+    </li>
+  {% else %}<li>Вариантов пока нет.</li>
   {% endfor %}
 </ul>
+<p><a href="{{ url_for('author_question_detail_page', id_question=question[0]) }}">К вопросу</a> · <a href="/author/tests">К тестам автора</a></p>
 {% endblock %}

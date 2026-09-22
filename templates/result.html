@@ -2,17 +2,21 @@
 {% block title %}Результат попытки - Qwiz{% endblock %}
 {% block content %}
 <h2>Результат попытки #{{ result[0] }}</h2>
+{% if session.get('role_code') == 'ADMIN' %}
+<p><strong>Участник:</strong> {{ result[12] }} (UID {{ result[11] }}) · <a href="/admin/attempts">Все попытки</a></p>
+{% endif %}
 <p><strong>Тест:</strong> {{ result[8] }}</p>
 <p><strong>Номер попытки:</strong> {{ result[1] }}</p>
 <p><strong>Старт:</strong> {{ result[2] }}</p>
 <p><strong>Завершение:</strong> {{ result[3] }}</p>
-<p><strong>Статус:</strong> {{ result[4] }}</p>
+<p><strong>Статус:</strong> {{ status_titles.get(result[4], result[4]) }}</p>
 <p><strong>Балл:</strong> {{ result[5] if result[5] is not none else 0 }}</p>
 <p><strong>Процент:</strong> {{ result[6] if result[6] is not none else 0 }}%</p>
 <p><strong>Средний по тесту:</strong> {{ '%.2f'|format(result[10]) }}%</p>
 <p><strong>Разница:</strong> {{ '%.2f'|format((result[6] or 0) - result[10]) }}%</p>
 
-{% if result[9] == 1 %}
+<p><a href="/my-attempts">Все мои попытки</a> · <a href="/tests/{{ result[7] }}">К тесту</a></p>
+{% if result[9] == 1 and result[4] != 'STARTED' %}
   <h3>Обратная связь</h3>
   <ul>
     {% for a in answers %}
@@ -21,7 +25,7 @@
         {% if a.image_path %}
           <br><img class="question-image" src="{{ url_for('static', filename=a.image_path) }}" alt="Фото к вопросу">
         {% endif %}
-        | Ваш ответ: {{ a.user_answer }}
+        | Ответ участника: {{ a.user_answer }}
         | Балл: {{ a.earned_score if a.earned_score is not none else 0 }}
         | Правильно: {{ 'Да' if a.is_correct == 1 else 'Нет' }}
         | Эталон: {{ a.correct_answer }}

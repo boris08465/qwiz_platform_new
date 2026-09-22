@@ -59,6 +59,7 @@ DECLARE
         p_role_description IN VARCHAR2
     ) IS
         v_count NUMBER;
+        v_new_id NUMBER;
     BEGIN
         SELECT COUNT(*) INTO v_count FROM role WHERE role_name = p_role_name;
 
@@ -67,8 +68,9 @@ DECLARE
                SET role_description = p_role_description
              WHERE role_name = p_role_name;
         ELSE
+            v_new_id := next_free_id('role', 'id_role', p_id_role);
             INSERT INTO role (id_role, role_name, role_description)
-            VALUES (next_free_id('role', 'id_role', p_id_role), p_role_name, p_role_description);
+            VALUES (v_new_id, p_role_name, p_role_description);
         END IF;
     END;
 
@@ -77,12 +79,14 @@ DECLARE
         p_level_name IN VARCHAR2
     ) IS
         v_count NUMBER;
+        v_new_id NUMBER;
     BEGIN
         SELECT COUNT(*) INTO v_count FROM difficulty_level WHERE level_name = p_level_name;
 
         IF v_count = 0 THEN
+            v_new_id := next_free_id('difficulty_level', 'id_level', p_id_level);
             INSERT INTO difficulty_level (id_level, level_name)
-            VALUES (next_free_id('difficulty_level', 'id_level', p_id_level), p_level_name);
+            VALUES (v_new_id, p_level_name);
         END IF;
     END;
 
@@ -98,6 +102,7 @@ DECLARE
         v_count NUMBER;
         v_type_id question_type.type_id%TYPE;
         v_name_conflicts NUMBER;
+        v_new_id NUMBER;
     BEGIN
         SELECT COUNT(*) INTO v_count FROM question_type WHERE type_code = p_type_code;
 
@@ -128,11 +133,12 @@ DECLARE
                        is_text_answer = p_is_text_answer
                  WHERE type_name = p_type_name;
             ELSE
+                v_new_id := next_free_id('question_type', 'type_id', p_type_id);
                 INSERT INTO question_type (
                     type_id, type_code, type_name, uses_options,
                     is_multi_select, is_numeric_answer, is_text_answer
                 ) VALUES (
-                    next_free_id('question_type', 'type_id', p_type_id),
+                    v_new_id,
                     p_type_code, p_type_name, p_uses_options,
                     p_is_multi_select, p_is_numeric_answer, p_is_text_answer
                 );
@@ -188,3 +194,4 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('Existing database upgraded.');
     DBMS_OUTPUT.PUT_LINE('Next step: execute sql/05_package_body.sql as a script to recompile quiz_platform.');
 END;
+/

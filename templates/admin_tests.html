@@ -2,9 +2,13 @@
 {% block title %}Админ: Тесты - Qwiz{% endblock %}
 {% block content %}
 <h2>Админ: Тесты</h2>
+<p><a href="/author/tests/create">Создать тест</a></p>
 <ul>
   {% for t in tests %}
-    <li>#{{ t[0] }} | {{ t[1] }} | Автор: {{ t[2] }} | {{ 'Опубликован' if t[3] == 1 else 'Скрыт' }} | {{ t[4] }}</li>
+    <li><a href="/author/tests/{{ t[0] }}">#{{ t[0] }} — {{ t[1] }}</a> | Автор: {{ t[2] }} | {{ 'Опубликован' if t[3] == 1 else 'Скрыт' }} | {{ t[4] }}
+      <br><a href="/author/tests/{{ t[0] }}/questions">Вопросы</a> · <a href="/author/tests/{{ t[0] }}/access">Доступ</a> · <a href="/author/tests/{{ t[0] }}/statistics">Статистика</a> · <a href="/tests/{{ t[0] }}">Пройти тест</a>
+    </li>
+  {% else %}<li>Тестов пока нет.</li>
   {% endfor %}
 </ul>
 {% endblock %}

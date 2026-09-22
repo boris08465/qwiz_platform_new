@@ -69,3 +69,43 @@ button {
   background: #fee2e2;
   color: #7f1d1d;
 }
+
+* { box-sizing: border-box; }
+body { line-height: 1.55; }
+header h1 { margin: 0 0 10px; }
+nav { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+nav a { margin: 0; padding: 3px 0; }
+nav a:hover, a:hover { text-decoration: underline; }
+main { overflow-wrap: anywhere; }
+form { max-width: 600px; margin: 16px 0; }
+input:not([type="radio"]):not([type="checkbox"]):not([type="hidden"]), select, textarea {
+  display: block; width: 100%; min-width: 0; padding: 10px 12px;
+  border: 1px solid #aeb8c6; border-radius: 6px; background: #fff; font: inherit;
+}
+input[type="file"] { padding: 8px; }
+input[type="radio"], input[type="checkbox"] { flex: 0 0 auto; width: 18px; height: 18px; margin: 0; }
+label { font-weight: 500; }
+fieldset { min-width: 0; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; }
+legend { padding: 0 5px; }
+.option-row { display: flex; align-items: center; gap: 10px; padding: 10px 4px; cursor: pointer; }
+button { border-radius: 6px; font: inherit; padding: 10px 14px; }
+button:hover:not(:disabled) { background: #1d4ed8; }
+button:disabled { background: #cbd5e1; color: #475569; cursor: not-allowed; }
+button.secondary { background: #e2e8f0; color: #1e293b; }
+button.secondary:hover { background: #cbd5e1; }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #60a5fa; outline-offset: 3px; }
+.inline-form { display: inline-flex; align-items: center; gap: 8px; margin: 6px; flex-wrap: wrap; }
+.inline-form select { width: auto; }
+.question-card { background: #fff; border: 1px solid #dbe2ea; border-radius: 10px; padding: 20px; margin: 20px 0; }
+.question-card h3 { margin-top: 0; }
+.hint { color: #526076; font-size: 0.94rem; }
+.field-error { color: #991b1b; }
+progress { width: min(100%, 600px); height: 14px; accent-color: #2563eb; }
+li { margin-bottom: 12px; }
+[hidden] { display: none !important; }
+@media (max-width: 600px) {
+  main { padding: 16px; }
+  .question-card { padding: 14px; }
+  .inline-form { display: flex; margin-left: 0; }
+  nav { font-size: 0.9rem; }
+}

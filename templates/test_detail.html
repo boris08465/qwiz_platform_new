@@ -6,9 +6,14 @@
 <p><strong>Категория:</strong> {{ test[3] or '-' }}</p>
 <p><strong>Сложность:</strong> {{ test[4] or '-' }}</p>
 <p><strong>Лимит времени:</strong> {{ test[5] or '-' }} сек</p>
-<p><strong>Лимит попыток:</strong> {{ test[6] }}</p>
+<p><strong>Лимит попыток:</strong> {{ 'Без ограничений для администратора' if session.get('role_code') == 'ADMIN' else test[6] }}</p>
 <p><strong>Использовано попыток:</strong> {{ test[9] }}</p>
-<p><strong>Вопросов:</strong> {{ test[7] or '-' }}</p>
+<p><strong>Вопросов:</strong> {{ test[7] }}</p>
 <p><strong>Обратная связь:</strong> {{ 'Включена' if test[8] == 1 else 'Отключена' }}</p>
-<p><a href="/tests/{{ test[0] }}/start">Начать попытку</a></p>
+<form method="post" action="{{ url_for('start_test_page', id_test=test[0]) }}">
+  <button type="submit">Начать / продолжить попытку</button>
+</form>
+<p class="hint">Если попытка уже начата, вы вернётесь к ней без расходования новой.</p>
+{% if session.get('role_code') == 'ADMIN' %}<p class="hint">Прохождение создаёт обычную попытку с результатом, фиксирует состав теста и учитывается в статистике.</p><p><a href="/author/tests/{{ test[0] }}">Управление тестом</a></p>{% endif %}
+<p><a href="/my-attempts">Мои попытки и результаты</a></p>
 {% endblock %}

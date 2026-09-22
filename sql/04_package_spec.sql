@@ -1,5 +1,9 @@
 CREATE OR REPLACE PACKAGE quiz_platform AS
     PROCEDURE info;
+    FUNCTION touch_question(p_id_attempt NUMBER, p_id_qt NUMBER, p_uid NUMBER) RETURN NUMBER;
+    PROCEDURE delete_answer_option(p_id_question NUMBER, p_id_option NUMBER, p_uid_author NUMBER);
+    PROCEDURE remove_test_question(p_uid_author NUMBER, p_id_test NUMBER, p_id_question NUMBER);
+    PROCEDURE set_user_role(p_uid_admin NUMBER, p_uid NUMBER, p_role_code VARCHAR2);
     PROCEDURE register_user(p_user_name VARCHAR2, p_password VARCHAR2);
     FUNCTION register_user_id(p_user_name VARCHAR2, p_password VARCHAR2) RETURN NUMBER;
     FUNCTION login_user(p_uid NUMBER, p_password VARCHAR2) RETURN NUMBER;
@@ -58,6 +62,7 @@ CREATE OR REPLACE PACKAGE quiz_platform AS
     FUNCTION get_test_statistics_summary(p_id_test NUMBER, p_uid_author NUMBER) RETURN SYS_REFCURSOR;
     FUNCTION list_test_statistics_questions(p_id_test NUMBER, p_uid_author NUMBER) RETURN SYS_REFCURSOR;
     FUNCTION list_admin_users(p_uid_admin NUMBER) RETURN SYS_REFCURSOR;
+    FUNCTION list_admin_attempts(p_uid_admin NUMBER) RETURN SYS_REFCURSOR;
     FUNCTION list_admin_tests(p_uid_admin NUMBER) RETURN SYS_REFCURSOR;
     FUNCTION list_admin_questions(p_uid_admin NUMBER) RETURN SYS_REFCURSOR;
     FUNCTION get_admin_statistics(p_uid_admin NUMBER) RETURN SYS_REFCURSOR;
@@ -65,4 +70,4 @@ CREATE OR REPLACE PACKAGE quiz_platform AS
     PROCEDURE show_user_attempts(p_uid NUMBER);
     PROCEDURE show_test_statistics(p_id_test NUMBER);
 END quiz_platform;
-
+/

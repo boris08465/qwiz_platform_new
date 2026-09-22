@@ -1,10 +1,12 @@
 import os
+import math
 from pathlib import Path
 from uuid import uuid4
 
 import oracledb
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import Flask, flash, g, redirect, render_template, request, session, url_for
 from werkzeug.utils import secure_filename
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from db import get_connection
 
@@ -21,6 +23,49 @@ ROLE_TITLE_FALLBACK = {
     'AUTHOR': 'Автор тестов',
     'ADMIN': 'Администратор',
 }
+
+
+def database_message(exc):
+    detail = str(getattr(exc.args[0], 'message', exc))
+    code = getattr(exc.args[0], 'code', None)
+    if code == 1:
+        return 'Такая запись уже существует. Проверьте название или порядок вопроса.'
+    if code in (12899, 6502):
+        return 'Значение слишком длинное или не помещается в допустимый диапазон.'
+    if code in (1400, 2290, 2291):
+        return 'Проверьте обязательные поля и допустимые значения формы.'
+    if code and 20000 <= code <= 20999:
+        return detail.splitlines()[0].split(': ', 1)[-1]
+    return 'Не удалось выполнить запрос к базе данных. Проверьте подключение и обновление схемы.'
+
+
+def finite_number(value):
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError('Введите конечное число.')
+    return number
+
+
+@app.errorhandler(oracledb.Error)
+def database_unavailable(exc):
+    app.logger.exception('Database request failed')
+    return render_template('error.html', message=database_message(exc)), 503
+
+
+@app.errorhandler(RequestEntityTooLarge)
+def upload_too_large(exc):
+    return render_template('error.html', message='Файл слишком большой. Максимальный размер запроса — 5 МБ.'), 413
+
+
+@app.errorhandler(404)
+def page_not_found(exc):
+    return render_template('error.html', message='Страница не найдена. Проверьте адрес или вернитесь в кабинет.'), 404
+
+
+@app.context_processor
+def display_helpers():
+    return {'status_titles': {'STARTED': 'В процессе', 'FINISHED': 'Завершена',
+                             'TIME_EXPIRED': 'Время истекло', 'INTERRUPTED': 'Прервана'}}
 
 
 def save_question_image(file_storage, question_id):
@@ -57,6 +102,14 @@ def require_auth():
     if 'user_id' not in session:
         flash('Сначала выполните вход.', 'error')
         return redirect(url_for('login_page'))
+    if not hasattr(g, 'current_user'):
+        g.current_user = get_user_by_uid(session['user_id'])
+    if not g.current_user or not g.current_user['is_active']:
+        session.clear()
+        flash('Пользователь не найден или отключён. Выполните вход заново.', 'error')
+        return redirect(url_for('login_page'))
+    session.update(user_name=g.current_user['user_name'], role_code=g.current_user['role_name_code'],
+                   role_title=g.current_user['role_title'])
     return None
 
 
@@ -69,7 +122,7 @@ def require_author_role():
             with conn.cursor() as cur:
                 has_access = int(cur.callfunc('quiz_platform.check_author_role', int, [session['user_id']]))
     except oracledb.DatabaseError as exc:
-        flash(f'Ошибка проверки доступа: {exc.args[0].message}', 'error')
+        flash(f'Ошибка проверки доступа: {database_message(exc)}', 'error')
         return redirect(url_for('dashboard_page'))
     if has_access != 1:
         flash('Доступ только для автора или администратора.', 'error')
@@ -86,7 +139,7 @@ def require_admin_role():
             with conn.cursor() as cur:
                 has_access = int(cur.callfunc('quiz_platform.check_admin_role', int, [session['user_id']]))
     except oracledb.DatabaseError as exc:
-        flash(f'Ошибка проверки доступа: {exc.args[0].message}', 'error')
+        flash(f'Ошибка проверки доступа: {database_message(exc)}', 'error')
         return redirect(url_for('dashboard_page'))
     if has_access != 1:
         flash('Доступ только для администратора.', 'error')
@@ -132,7 +185,7 @@ def register_page():
             flash(f'Регистрация успешно завершена. Ваш user_id: {new_uid}. Используйте этот user_id для входа в систему.', 'success')
             return redirect(url_for('login_page'))
         except oracledb.DatabaseError as exc:
-            flash(f'Ошибка регистрации: {exc.args[0].message}', 'error')
+            flash(f'Ошибка регистрации: {database_message(exc)}', 'error')
     return render_template('register.html')
 
 
@@ -141,6 +194,9 @@ def login_page():
     if request.method == 'POST':
         uid_raw = request.form.get('user_id', '').strip()
         password = request.form.get('password', '')
+        if not password:
+            flash('Введите пароль.', 'error')
+            return render_template('login.html')
         if not uid_raw.isdigit():
             flash('user_id должен быть числом.', 'error')
             return render_template('login.html')
@@ -159,7 +215,7 @@ def login_page():
             session['role_title'] = user['role_title']
             return redirect(url_for('dashboard_page'))
         except oracledb.DatabaseError as exc:
-            flash(f'Ошибка входа: {exc.args[0].message}', 'error')
+            flash(f'Ошибка входа: {database_message(exc)}', 'error')
     return render_template('login.html')
 
 
@@ -175,7 +231,7 @@ def dashboard_page():
     auth = require_auth()
     if auth:
         return auth
-    return render_template('dashboard.html', user_id=session['user_id'], user_name=session['user_name'], role_title=session['role_title'])
+    return render_template('dashboard.html', user_id=session['user_id'], user_name=session.get('user_name', ''), role_title=session.get('role_title', 'Пользователь'))
 
 
 @app.get('/profile')
@@ -184,6 +240,10 @@ def profile_page():
     if auth:
         return auth
     user = get_user_by_uid(session['user_id'])
+    if not user:
+        session.clear()
+        flash('Пользователь не найден. Выполните вход заново.', 'error')
+        return redirect(url_for('login_page'))
     return render_template('profile.html', user_id=user['user_id'], user_name=user['user_name'], role_title=user['role_title'], role_name_code=user['role_name_code'], is_active=user['is_active'])
 
 
@@ -213,7 +273,7 @@ def author_categories_create():
             conn.commit()
         flash('Категория создана.', 'success')
     except oracledb.DatabaseError as exc:
-        flash(f'Ошибка создания категории: {exc.args[0].message}', 'error')
+        flash(f'Ошибка создания категории: {database_message(exc)}', 'error')
     return redirect(url_for('author_categories_page'))
 
 
@@ -242,7 +302,7 @@ def author_difficulty_levels_create():
             conn.commit()
         flash('Уровень сложности создан.', 'success')
     except oracledb.DatabaseError as exc:
-        flash(f'Ошибка создания уровня: {exc.args[0].message}', 'error')
+        flash(f'Ошибка создания уровня: {database_message(exc)}', 'error')
     return redirect(url_for('author_difficulty_levels_page'))
 
 
@@ -271,7 +331,7 @@ def author_question_types_create():
             conn.commit()
         flash('Тип вопроса создан.', 'success')
     except oracledb.DatabaseError as exc:
-        flash(f'Ошибка создания типа: {exc.args[0].message}', 'error')
+        flash(f'Ошибка создания типа: {database_message(exc)}', 'error')
     return redirect(url_for('author_question_types_page'))
 
 
@@ -303,6 +363,7 @@ def create_question_submit():
 
     form = request.form
     image_file = request.files.get('question_image')
+    image_path = None
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -316,8 +377,8 @@ def create_question_submit():
                         int(form.get('id_level')),
                         int(form.get('type_id')),
                         form.get('correct_text') or None,
-                        float(form.get('correct_number')) if form.get('correct_number') else None,
-                        float(form.get('tolerance')) if form.get('tolerance') else None,
+                        finite_number(form.get('correct_number')) if form.get('correct_number') else None,
+                        finite_number(form.get('tolerance')) if form.get('tolerance') else None,
                         form.get('explanation') or None,
                     ],
                 ))
@@ -336,7 +397,7 @@ def create_question_submit():
                     )
             conn.commit()
         flash('Вопрос создан.', 'success')
-        return redirect(url_for('author_question_detail_page', id_question=new_question_id))
+        return redirect(url_for('author_question_options_page', id_question=new_question_id))
     except ValueError as exc:
         message = str(exc)
         if message.startswith('Можно загрузить'):
@@ -346,8 +407,17 @@ def create_question_submit():
     except TypeError:
         flash('Некорректные числовые параметры.', 'error')
     except oracledb.DatabaseError as exc:
-        flash(f'Ошибка создания вопроса: {exc.args[0].message}', 'error')
-    return redirect(url_for('create_question_page'))
+        flash(f'Ошибка создания вопроса: {database_message(exc)}', 'error')
+    except OSError:
+        flash('Не удалось сохранить изображение. Проверьте доступ к папке загрузок.', 'error')
+    if image_path:
+        try:
+            (Path(app.root_path) / 'static' / image_path).unlink(missing_ok=True)
+        except OSError:
+            app.logger.warning('Could not clean up uncommitted question image')
+    return render_template('create_question.html', categories=fetch_cursor('quiz_platform.list_categories'),
+                           levels=fetch_cursor('quiz_platform.list_difficulty_levels'),
+                           types=fetch_cursor('quiz_platform.list_question_types'))
 
 
 @app.get('/author/questions/<int:id_question>')
@@ -374,7 +444,7 @@ def author_question_deactivate(id_question):
             conn.commit()
         flash('Вопрос деактивирован.', 'success')
     except oracledb.DatabaseError as exc:
-        flash(f'Ошибка деактивации: {exc.args[0].message}', 'error')
+        flash(f'Ошибка деактивации: {database_message(exc)}', 'error')
     return redirect(url_for('author_question_detail_page', id_question=id_question))
 
 
@@ -387,6 +457,8 @@ def author_question_options_page(id_question):
     if not question:
         flash('Вопрос не найден.', 'error')
         return redirect(url_for('author_questions_page'))
+    if not question[0][11]:
+        return redirect(url_for('author_question_detail_page', id_question=id_question))
     options = fetch_cursor('quiz_platform.list_answer_options', [id_question, session['user_id']])
     return render_template('question_options.html', question=question[0], options=options)
 
@@ -396,6 +468,9 @@ def author_question_options_create(id_question):
     access = require_author_role()
     if access:
         return access
+    if not fetch_cursor('quiz_platform.get_author_question', [id_question, session['user_id']]):
+        flash('Вопрос не найден.', 'error')
+        return redirect(url_for('author_questions_page'))
     option_text = request.form.get('option_text', '').strip()
     is_correct = 1 if request.form.get('is_correct') == '1' else 0
     if not option_text:
@@ -408,7 +483,23 @@ def author_question_options_create(id_question):
             conn.commit()
         flash('Вариант ответа добавлен.', 'success')
     except oracledb.DatabaseError as exc:
-        flash(f'Ошибка добавления варианта: {exc.args[0].message}', 'error')
+        flash(f'Ошибка добавления варианта: {database_message(exc)}', 'error')
+    return redirect(url_for('author_question_options_page', id_question=id_question))
+
+
+@app.post('/author/questions/<int:id_question>/options/<int:id_option>/delete')
+def author_question_option_delete(id_question, id_option):
+    access = require_author_role()
+    if access:
+        return access
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.callproc('quiz_platform.delete_answer_option', [id_question, id_option, session['user_id']])
+            conn.commit()
+        flash('Вариант удалён.', 'success')
+    except oracledb.DatabaseError as exc:
+        flash(database_message(exc), 'error')
     return redirect(url_for('author_question_options_page', id_question=id_question))
 
 
@@ -451,6 +542,9 @@ def attempt_page(id_attempt):
         return redirect(url_for('my_attempts_page'))
     attempt = attempt_rows[0]
 
+    if attempt[1] != 'STARTED':
+        return redirect(url_for('result_page', id_attempt=id_attempt))
+
     if attempt[1] == 'STARTED' and attempt[6] is not None and attempt[8] <= 0:
         try:
             with get_connection() as conn:
@@ -460,7 +554,7 @@ def attempt_page(id_attempt):
             flash('Время теста истекло. Попытка завершена автоматически.', 'error')
             return redirect(url_for('result_page', id_attempt=id_attempt))
         except oracledb.DatabaseError as exc:
-            flash(f'Ошибка завершения попытки: {exc.args[0].message}', 'error')
+            flash(f'Ошибка завершения попытки: {database_message(exc)}', 'error')
 
     questions = fetch_cursor('quiz_platform.list_attempt_questions', [id_attempt])
 
@@ -498,6 +592,20 @@ def attempt_page(id_attempt):
                 current_question = question
                 break
 
+    question_elapsed = 0
+    if current_question:
+        try:
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    question_elapsed = int(cur.callfunc('quiz_platform.touch_question', int,
+                        [id_attempt, current_question[0], session['user_id']]))
+                conn.commit()
+        except oracledb.DatabaseError as exc:
+            if getattr(exc.args[0], 'code', None) == 20305:
+                return redirect(url_for('result_page', id_attempt=id_attempt))
+            raise
+    missing_required = sum(1 for q in questions if q[13] == 1 and q[0] not in answer_map)
+
     return render_template(
         'attempt.html',
         attempt=attempt,
@@ -507,10 +615,12 @@ def attempt_page(id_attempt):
         total_questions=total_questions,
         option_map=option_map,
         answer_map=answer_map,
+        missing_required=missing_required,
+        question_remaining=max(0, current_question[3] - question_elapsed) if current_question and current_question[3] else None,
     )
 
 
-@app.get('/tests/<int:id_test>/start')
+@app.post('/tests/<int:id_test>/start')
 def start_test_page(id_test):
     auth = require_auth()
     if auth:
@@ -522,7 +632,7 @@ def start_test_page(id_test):
             conn.commit()
         return redirect(url_for('attempt_page', id_attempt=new_attempt_id))
     except oracledb.DatabaseError as exc:
-        flash(f'Ошибка запуска попытки: {exc.args[0].message}', 'error')
+        flash(f'Ошибка запуска попытки: {database_message(exc)}', 'error')
         return redirect(url_for('test_detail_page', id_test=id_test))
 
 
@@ -536,29 +646,69 @@ def save_attempt_answer_page(id_attempt):
         flash('Неверный вопрос попытки.', 'error')
         return redirect(url_for('attempt_page', id_attempt=id_attempt))
     id_qt = int(id_qt_raw)
-    try:
-        answer_time = max(0, int(request.form.get('answer_time', '0') or 0))
-    except ValueError:
-        answer_time = 0
-    answer_text = request.form.get('answer_text') or None
+    answer_text = request.form.get('answer_text', '').strip() or None
     answer_number_raw = request.form.get('answer_number', '').strip()
-    answer_number = float(answer_number_raw) if answer_number_raw else None
-    selected_option_ids = [int(x) for x in request.form.getlist('selected_option_ids') if str(x).isdigit()]
-
+    skip = request.form.get('skip') == '1'
+    timeout = request.form.get('timeout') == '1'
     try:
+        attempt_rows = fetch_cursor('quiz_platform.get_attempt', [id_attempt, session['user_id']])
+        if not attempt_rows:
+            flash('Попытка не найдена.', 'error')
+            return redirect(url_for('my_attempts_page'))
+        if attempt_rows[0][1] != 'STARTED':
+            return redirect(url_for('result_page', id_attempt=id_attempt))
+        questions = fetch_cursor('quiz_platform.list_attempt_questions', [id_attempt])
+        question = next((q for q in questions if q[0] == id_qt), None)
+        if question is None:
+            raise ValueError('Вопрос не относится к этой попытке.')
+        answer_number = finite_number(answer_number_raw) if answer_number_raw and not (skip or timeout) else None
+        selected_option_ids = [] if skip or timeout else list(dict.fromkeys(int(x) for x in request.form.getlist('selected_option_ids')))
+        if skip and question[13] == 1:
+            raise ValueError('На обязательный вопрос нужно ответить.')
+        if not skip and not timeout:
+            if question[8] == 1:
+                valid_options = {o[0] for o in fetch_cursor('quiz_platform.list_attempt_question_options', [id_attempt]) if o[1] == question[4]}
+                if not selected_option_ids or not set(selected_option_ids).issubset(valid_options):
+                    raise ValueError('Выберите вариант ответа из списка.')
+                if question[9] != 1 and len(selected_option_ids) != 1:
+                    raise ValueError('Выберите один вариант ответа.')
+            elif question[10] == 1 and answer_number is None:
+                raise ValueError('Введите числовой ответ.')
+            elif question[11] == 1 and not answer_text:
+                raise ValueError('Введите текстовый ответ.')
+        if answer_text and len(answer_text) > 500:
+            raise ValueError('Ответ не должен превышать 500 символов.')
+        if skip or timeout:
+            answer_text, answer_number, selected_option_ids = None, None, []
+        else:
+            answer_text = answer_text if question[11] else None
+            answer_number = answer_number if question[10] else None
+            selected_option_ids = selected_option_ids if question[8] else []
         with get_connection() as conn:
             with conn.cursor() as cur:
-                new_answer_id = int(cur.callfunc('quiz_platform.save_answer_id', int, [id_attempt, id_qt, answer_text, answer_number, answer_time, session['user_id']]))
-                for opt_id in selected_option_ids:
-                    cur.callproc('quiz_platform.save_selected_option', [new_answer_id, opt_id])
+                elapsed = int(cur.callfunc('quiz_platform.touch_question', int, [id_attempt, id_qt, session['user_id']]))
+                if timeout and (question[3] is None or elapsed < question[3]):
+                    raise ValueError('Время на вопрос ещё не истекло.')
+                new_answer_id = int(cur.callfunc('quiz_platform.save_answer_id', int, [id_attempt, id_qt, answer_text, answer_number, elapsed, session['user_id']]))
+                if new_answer_id:
+                    for opt_id in selected_option_ids:
+                        cur.callproc('quiz_platform.save_selected_option', [new_answer_id, opt_id])
             conn.commit()
-        flash('Ответ сохранен.', 'success')
+        if not new_answer_id:
+            flash('Время теста истекло. Сохранённые ответы учтены в результате.', 'error')
+            return redirect(url_for('result_page', id_attempt=id_attempt))
+        flash('Вопрос пропущен.' if skip else ('Время на вопрос истекло.' if timeout else 'Ответ сохранён.'), 'success')
+    except (ValueError, OverflowError) as exc:
+        message = str(exc)
+        if message.startswith(('could not', 'invalid literal')):
+            message = 'Проверьте числовой ответ и выбранные варианты.'
+        flash(message, 'error')
     except oracledb.DatabaseError as exc:
-        flash(f'Ошибка сохранения ответа: {exc.args[0].message}', 'error')
+        flash(f'Ошибка сохранения ответа: {database_message(exc)}', 'error')
     return redirect(url_for('attempt_page', id_attempt=id_attempt))
 
 
-@app.route('/attempts/<int:id_attempt>/finish', methods=['POST', 'GET'])
+@app.post('/attempts/<int:id_attempt>/finish')
 def finish_attempt_page(id_attempt):
     auth = require_auth()
     if auth:
@@ -570,7 +720,7 @@ def finish_attempt_page(id_attempt):
             conn.commit()
         return redirect(url_for('result_page', id_attempt=id_attempt))
     except oracledb.DatabaseError as exc:
-        flash(f'Ошибка завершения попытки: {exc.args[0].message}', 'error')
+        flash(f'Ошибка завершения попытки: {database_message(exc)}', 'error')
         return redirect(url_for('attempt_page', id_attempt=id_attempt))
 
 
@@ -584,6 +734,8 @@ def result_page(id_attempt):
         flash('Результат не найден.', 'error')
         return redirect(url_for('my_attempts_page'))
     result = rows[0]
+    if result[4] == 'STARTED':
+        return redirect(url_for('attempt_page', id_attempt=id_attempt))
 
     answers = []
     if result[9] == 1:
@@ -676,7 +828,7 @@ def create_test_page():
         except (TypeError, ValueError):
             flash('Проверьте числовые параметры теста.', 'error')
         except oracledb.DatabaseError as exc:
-            flash(f'Ошибка создания теста: {exc.args[0].message}', 'error')
+            flash(f'Ошибка создания теста: {database_message(exc)}', 'error')
 
     categories = fetch_cursor('quiz_platform.list_categories')
     levels = fetch_cursor('quiz_platform.list_difficulty_levels')
@@ -701,6 +853,10 @@ def author_test_questions_page(id_test):
     access = require_author_role()
     if access:
         return access
+    owner_test = fetch_cursor('quiz_platform.get_author_test', [id_test, session['user_id']])
+    if not owner_test:
+        flash('Тест не найден.', 'error')
+        return redirect(url_for('author_tests_page'))
     if request.method == 'POST':
         form = request.form
         try:
@@ -712,7 +868,7 @@ def author_test_questions_page(id_test):
                             session['user_id'],
                             id_test,
                             int(form.get('id_question')),
-                            float(form.get('weight')) if form.get('weight') else 1,
+                            finite_number(form.get('weight')) if form.get('weight') else 1,
                             int(form.get('order_num')),
                             int(form.get('is_required')),
                             int(form.get('time_limit')) if form.get('time_limit') else None,
@@ -723,12 +879,46 @@ def author_test_questions_page(id_test):
         except (TypeError, ValueError):
             flash('Проверьте числовые параметры.', 'error')
         except oracledb.DatabaseError as exc:
-            flash(f'Ошибка добавления вопроса: {exc.args[0].message}', 'error')
+            flash(f'Ошибка добавления вопроса: {database_message(exc)}', 'error')
         return redirect(url_for('author_test_questions_page', id_test=id_test))
 
     selected = fetch_cursor('quiz_platform.list_selected_test_questions', [id_test])
     pool = fetch_cursor('quiz_platform.list_question_pool', [id_test, session['user_id']])
-    return render_template('author_test_questions.html', id_test=id_test, selected=selected, pool=pool)
+    return render_template('author_test_questions.html', id_test=id_test, selected=selected, pool=pool,
+                           next_order=max((q[0] for q in selected), default=0) + 1, test=owner_test[0])
+
+
+@app.post('/author/tests/<int:id_test>/questions/<int:id_question>/delete')
+def author_test_question_delete(id_test, id_question):
+    access = require_author_role()
+    if access:
+        return access
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.callproc('quiz_platform.remove_test_question', [session['user_id'], id_test, id_question])
+            conn.commit()
+        flash('Вопрос удалён из теста.', 'success')
+    except oracledb.DatabaseError as exc:
+        flash(database_message(exc), 'error')
+    return redirect(url_for('author_test_questions_page', id_test=id_test))
+
+
+@app.post('/admin/users/<int:user_id>/role')
+def admin_user_role(user_id):
+    access = require_admin_role()
+    if access:
+        return access
+    role = request.form.get('role_code', '')
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.callproc('quiz_platform.set_user_role', [session['user_id'], user_id, role])
+            conn.commit()
+        flash('Роль пользователя изменена.', 'success')
+    except oracledb.DatabaseError as exc:
+        flash(database_message(exc), 'error')
+    return redirect(url_for('admin_users_page'))
 
 
 @app.post('/author/tests/<int:id_test>/generate')
@@ -743,7 +933,7 @@ def author_test_generate_page(id_test):
             conn.commit()
         flash('Тест автоматически сформирован.', 'success')
     except oracledb.DatabaseError as exc:
-        flash(f'Ошибка автогенерации: {exc.args[0].message}', 'error')
+        flash(f'Ошибка автогенерации: {database_message(exc)}', 'error')
     return redirect(url_for('author_test_detail_page', id_test=id_test))
 
 
@@ -759,7 +949,7 @@ def author_test_publish_page(id_test):
             conn.commit()
         flash('Статус публикации теста изменен.', 'success')
     except oracledb.DatabaseError as exc:
-        flash(f'Ошибка публикации: {exc.args[0].message}', 'error')
+        flash(f'Ошибка публикации: {database_message(exc)}', 'error')
     return redirect(url_for('author_test_detail_page', id_test=id_test))
 
 
@@ -792,7 +982,7 @@ def test_access_grant_page(id_test):
             conn.commit()
         flash('Доступ выдан.', 'success')
     except oracledb.DatabaseError as exc:
-        flash(f'Ошибка выдачи доступа: {exc.args[0].message}', 'error')
+        flash(f'Ошибка выдачи доступа: {database_message(exc)}', 'error')
     return redirect(url_for('test_access_page', id_test=id_test))
 
 
@@ -808,7 +998,7 @@ def test_access_deactivate_page(id_test, user_id):
             conn.commit()
         flash('Доступ деактивирован.', 'success')
     except oracledb.DatabaseError as exc:
-        flash(f'Ошибка деактивации доступа: {exc.args[0].message}', 'error')
+        flash(f'Ошибка деактивации доступа: {database_message(exc)}', 'error')
     return redirect(url_for('test_access_page', id_test=id_test))
 
 
@@ -835,6 +1025,15 @@ def admin_users_page():
         return access
     users = fetch_cursor('quiz_platform.list_admin_users', [session['user_id']])
     return render_template('admin_users.html', users=users)
+
+
+@app.get('/admin/attempts')
+def admin_attempts_page():
+    access = require_admin_role()
+    if access:
+        return access
+    attempts = fetch_cursor('quiz_platform.list_admin_attempts', [session['user_id']])
+    return render_template('admin_attempts.html', attempts=attempts)
 
 
 @app.get('/admin/tests')
@@ -882,4 +1081,4 @@ def admin_statistics_page():
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=os.getenv('FLASK_DEBUG') == '1')

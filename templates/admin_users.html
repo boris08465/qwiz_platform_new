@@ -4,7 +4,17 @@
 <h2>Админ: Пользователи</h2>
 <ul>
   {% for u in users %}
-    <li>UID {{ u[0] }} | {{ u[1] }} | {{ u[2] }} | {{ 'Активен' if u[3] == 1 else 'Отключен' }} | {{ u[4] }}</li>
+    <li>UID {{ u[0] }} | {{ u[1] }} | {{ u[2] }} | {{ 'Активен' if u[3] == 1 else 'Отключен' }} | {{ u[4] }}
+      <form class="inline-form" method="post" action="{{ url_for('admin_user_role', user_id=u[0]) }}">
+        <label for="role-{{ u[0] }}">Роль</label>
+        <select id="role-{{ u[0] }}" name="role_code">
+          {% for code, title in [('USER', 'Пользователь'), ('AUTHOR', 'Автор'), ('ADMIN', 'Администратор')] %}
+          <option value="{{ code }}" {% if code == u[2] %}selected{% endif %}>{{ title }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit">Сохранить роль</button>
+      </form>
+    </li>
   {% endfor %}
 </ul>
 {% endblock %}

@@ -15,8 +15,9 @@
 <p><strong>Допуск:</strong> {{ q[5] if q[5] is not none else '-' }}</p>
 <p><strong>Пояснение:</strong> {{ q[2] or '-' }}</p>
 
-<p><a href="/author/questions/{{ q[0] }}/options">Варианты ответа</a></p>
+{% if q[11] %}<p><a href="/author/questions/{{ q[0] }}/options">Варианты ответа</a></p>{% endif %}
 <form method="post" action="/author/questions/{{ q[0] }}/deactivate">
   <button type="submit">Деактивировать вопрос</button>
 </form>
+<p><a href="/author/questions">К банку вопросов</a></p>
 {% endblock %}

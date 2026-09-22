@@ -3,39 +3,68 @@
 {% block content %}
 <h2>Создание вопроса</h2>
 <form method="post" action="/author/questions/create" enctype="multipart/form-data">
-  <label>Текст вопроса</label>
-  <input type="text" name="question_text" required>
+  <label for="question-text">Текст вопроса</label>
+  <input id="question-text" type="text" name="question_text" maxlength="500" value="{{ request.form.get('question_text', '') }}" required>
 
-  <label>Фото к вопросу</label>
-  <input type="file" name="question_image" accept="image/png,image/jpeg,image/gif,image/webp">
+  <label for="question-image">Фото к вопросу</label>
+  <input id="question-image" type="file" name="question_image" accept="image/png,image/jpeg,image/gif,image/webp">
 
-  <label>Категория</label>
-  <select name="id_category" required>
-    {% for c in categories %}<option value="{{ c[0] }}">{{ c[1] }}</option>{% endfor %}
+  <label for="category">Категория</label>
+  <select id="category" name="id_category" required>
+    {% for c in categories %}<option value="{{ c[0] }}" {% if request.form.get('id_category') == c[0]|string %}selected{% endif %}>{{ c[1] }}</option>{% endfor %}
   </select>
 
-  <label>Сложность</label>
-  <select name="id_level" required>
-    {% for l in levels %}<option value="{{ l[0] }}">{{ l[1] }}</option>{% endfor %}
+  <label for="level">Сложность</label>
+  <select id="level" name="id_level" required>
+    {% for l in levels %}<option value="{{ l[0] }}" {% if request.form.get('id_level') == l[0]|string %}selected{% endif %}>{{ l[1] }}</option>{% endfor %}
   </select>
 
-  <label>Тип вопроса</label>
-  <select name="type_id" required>
-    {% for t in types %}<option value="{{ t[0] }}">{{ t[1] }}</option>{% endfor %}
+  <label for="question-type">Тип вопроса</label>
+  <select name="type_id" id="question-type" required>
+    {% for t in types %}<option value="{{ t[0] }}" data-options="{{ t[3] }}" data-numeric="{{ t[5] }}" data-text="{{ t[6] }}" {% if request.form.get('type_id') == t[0]|string %}selected{% endif %}>{{ t[1] }}</option>{% endfor %}
   </select>
 
-  <label>Правильный текст (для текстовых/коротких)</label>
-  <input type="text" name="correct_text">
+  <div id="text-fields">
+  <label for="correct-text">Правильный текст</label>
+  <input id="correct-text" type="text" name="correct_text" maxlength="500" value="{{ request.form.get('correct_text', '') }}">
+  </div>
 
-  <label>Правильное число (для числовых)</label>
-  <input type="number" step="any" name="correct_number">
+  <div id="numeric-fields">
+  <label for="correct-number">Правильное число</label>
+  <input id="correct-number" type="number" step="any" name="correct_number" value="{{ request.form.get('correct_number', '') }}">
 
-  <label>Допуск (для числовых)</label>
-  <input type="number" step="any" name="tolerance">
+  <label for="tolerance">Допуск (0 — точное совпадение)</label>
+  <input id="tolerance" type="number" step="any" min="0" name="tolerance" value="{{ request.form.get('tolerance', '0') }}">
+  </div>
+  <p id="options-hint" class="hint">После создания добавьте минимум два варианта и отметьте правильные ответы.</p>
 
-  <label>Пояснение</label>
-  <input type="text" name="explanation">
+  <label for="explanation">Пояснение</label>
+  <input id="explanation" type="text" name="explanation" maxlength="500" value="{{ request.form.get('explanation', '') }}">
 
-  <button type="submit">Создать вопрос</button>
+  <button type="submit" {% if not categories or not levels or not types %}disabled{% endif %}>Создать вопрос</button>
 </form>
+{% if not categories %}<p>Сначала <a href="/author/categories">создайте категорию</a>.</p>{% endif %}
+{% if not levels %}<p>Сначала <a href="/author/difficulty-levels">создайте уровень сложности</a>.</p>{% endif %}
+{% if not types %}<p>Сначала <a href="/author/question-types">создайте тип вопроса</a>.</p>{% endif %}
+<script>
+(() => {
+  const type = document.getElementById('question-type');
+  function updateFields() {
+    const option = type.selectedOptions[0];
+    if (!option) return;
+    for (const kind of ['text', 'numeric']) {
+      const enabled = option.dataset[kind] === '1';
+      const group = document.getElementById(kind + '-fields');
+      group.hidden = !enabled;
+      group.querySelectorAll('input').forEach(input => {
+        input.disabled = !enabled;
+        input.required = enabled && input.name !== 'tolerance';
+      });
+    }
+    document.getElementById('options-hint').hidden = option.dataset.options !== '1';
+  }
+  type.addEventListener('change', updateFields);
+  updateFields();
+})();
+</script>
 {% endblock %}

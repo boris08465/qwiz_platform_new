@@ -185,3 +185,10 @@ CREATE TABLE answer_selected_option (
     CONSTRAINT fk_selected_option FOREIGN KEY (id_option) REFERENCES answer_option(id_option),
     CONSTRAINT uq_selected_answer_option UNIQUE (id_answer, id_option)
 );
+
+CREATE TABLE attempt_question_visit (
+    id_attempt NUMBER NOT NULL REFERENCES attempt(id_attempt),
+    id_qt NUMBER NOT NULL REFERENCES question_in_test(id_qt),
+    started_at DATE DEFAULT SYSDATE NOT NULL,
+    CONSTRAINT pk_attempt_question_visit PRIMARY KEY (id_attempt, id_qt)
+);

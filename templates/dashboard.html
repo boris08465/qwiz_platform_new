@@ -2,12 +2,18 @@
 {% block title %}Личный кабинет - Qwiz{% endblock %}
 {% block content %}
 <h2>Личный кабинет</h2>
-<p><strong>ID пользователя:</strong> {{ uid }}</p>
+<p><strong>ID пользователя:</strong> {{ user_id }}</p>
 <p><strong>Имя:</strong> {{ user_name }}</p>
 <p><strong>Роль:</strong> {{ role_title }}</p>
 
 <h3>Быстрые ссылки</h3>
 <ul>
+  {% if session.get('role_code') == 'ADMIN' %}
+  <li><a href="/admin/tests">Управлять всеми тестами</a></li>
+  <li><a href="/admin/questions">Управлять всеми вопросами</a></li>
+  <li><a href="/admin/attempts">Все попытки и результаты</a></li>
+  <li><a href="/admin/users">Пользователи и роли</a></li>
+  {% endif %}
   <li><a href="/tests">Доступные тесты</a></li>
   <li><a href="/my-attempts">Мои попытки</a></li>
   <li><a href="/profile">Профиль</a></li>

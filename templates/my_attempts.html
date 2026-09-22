@@ -5,13 +5,15 @@
 <ul>
   {% for a in attempts %}
     <li>
-      <a href="/attempts/{{ a[0] }}/result">Попытка #{{ a[0] }}</a>
+      <a href="{{ url_for('attempt_page' if a[3] == 'STARTED' else 'result_page', id_attempt=a[0]) }}">{{ 'Продолжить' if a[3] == 'STARTED' else 'Результат' }} — попытка #{{ a[0] }}</a>
       | Тест: {{ a[1] }}
       | Номер: {{ a[2] }}
-      | Статус: {{ a[3] }}
+      | Статус: {{ status_titles.get(a[3], a[3]) }}
       | Балл: {{ a[4] if a[4] is not none else '-' }}
       | Процент: {{ a[5] if a[5] is not none else '-' }}
     </li>
+  {% else %}
+    <li>Вы ещё не начинали тесты. <a href="/tests">Открыть доступные тесты</a></li>
   {% endfor %}
 </ul>
 {% endblock %}
