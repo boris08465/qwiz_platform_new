@@ -31,7 +31,7 @@ def main():
                     if states.get('PACKAGE') != 'VALID' or states.get('PACKAGE BODY') != 'VALID' or errors or not has_visits or not has_types or not has_roles or not has_current_api:
                         for line, message in errors:
                             print(f'PL/SQL line {line}: {message}')
-                        print('Схема требует обновления: выполните sql/10_upgrade_workflow.sql в схеме DB_USER.')
+                        print('Схема требует обновления: выполните sql/10_upgrade_workflow.sql в схеме приложения (параметры в db.py).')
                         return 1
                     print('Подключение работает. Пакет QUIZ_PLATFORM и таблица таймеров готовы.')
                 else:
@@ -42,7 +42,7 @@ def main():
                     conn.commit()
                     print(f'Пользователь {args.user_id} теперь администратор.')
     except oracledb.Error:
-        print('Не удалось подключиться к Oracle или выполнить запрос. Проверьте DB_USER, DB_PASSWORD, DB_DSN и доступ к сети.', file=sys.stderr)
+        print('Не удалось подключиться к Oracle или выполнить запрос. Проверьте настройки в db.py, доступ к сети/VPN и наличие объектов Qwiz. Переменные DB_USER, DB_PASSWORD, DB_DSN, если заданы, переопределяют настройки db.py.', file=sys.stderr)
         return 1
     return 0
 
